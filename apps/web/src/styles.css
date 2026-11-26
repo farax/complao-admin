@@ -1,0 +1,272 @@
+:root {
+  --paper: #fafaf8;
+  --rule: #e2e5ea;
+  --ink-text: #17233f;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink-text);
+  font-feature-settings: 'tnum' 0;
+}
+
+.num,
+.mantine-datatable td.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.app-header {
+  background: #fff;
+  border-bottom: 1px solid var(--rule);
+}
+.app-nav {
+  background: var(--paper);
+  border-right: 1px solid var(--rule);
+}
+.app-main {
+  background: var(--paper);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--ink-text);
+  white-space: nowrap;
+}
+.brand b {
+  font-weight: 600;
+}
+
+.pull-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.page-head p {
+  max-width: 62ch;
+}
+
+/* Tables sit on white paper with a hairline, rows are calm until something is wrong */
+.sheet {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.row-failed td {
+  background: #fdf3f3;
+}
+.row-degraded td {
+  background: #fff8e6;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 91, 234, 0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(47, 91, 234, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 91, 234, 0); }
+}
+.pulse {
+  animation: pulse 1.8s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; }
+}
+
+/* ---------------------------------------------------------------- the step tree (R6) */
+.trace {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.trace-head,
+.trace-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 2.1fr) 86px 78px minmax(220px, 2fr);
+  align-items: stretch;
+}
+.trace-head {
+  font-size: 12px;
+  color: var(--mantine-color-gray-6);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.trace-head > div {
+  padding: 9px 12px;
+}
+.trace-row {
+  border-bottom: 1px solid #eef0f3;
+  cursor: pointer;
+  position: relative;
+}
+.trace-row:last-child {
+  border-bottom: 0;
+}
+.trace-row:hover {
+  background: #f7f8fb;
+}
+.trace-row:focus-visible {
+  outline: 2px solid var(--mantine-color-ink-6);
+  outline-offset: -2px;
+}
+.trace-row > .cell {
+  padding: 9px 12px;
+  min-width: 0;
+}
+.trace-row .cell.num {
+  font-size: 13.5px;
+  padding-top: 11px;
+}
+.trace-row.is-slowest {
+  background: #eef2fe;
+}
+.trace-row.is-slowest:hover {
+  background: #e5ebfd;
+}
+.trace-row.is-failed {
+  background: #fdf3f3;
+}
+.trace-row.is-failed:hover {
+  background: #fbeaea;
+}
+
+/* indentation guides */
+.step-name {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.guides {
+  display: flex;
+  align-self: stretch;
+  flex: none;
+}
+.guide {
+  width: 18px;
+  position: relative;
+  margin: -9px 0;
+}
+.guide::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #cfd5df;
+}
+.guide.elbow::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 19px;
+  width: 9px;
+  border-top: 1px solid #cfd5df;
+}
+.guide.elbow.last::before {
+  bottom: auto;
+  height: 19px;
+}
+.step-label {
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 500;
+}
+.is-slowest .step-label {
+  font-weight: 600;
+}
+.step-sub {
+  font-size: 12.5px;
+  color: var(--mantine-color-gray-6);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+.is-failed .step-sub {
+  color: #a33a3a;
+}
+
+/* waterfall */
+.timeline {
+  position: relative;
+  height: 100%;
+  min-height: 22px;
+}
+.timeline .track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 19px;
+  border-top: 1px solid #e8ebf0;
+}
+.timeline .bar {
+  position: absolute;
+  top: 13px;
+  height: 12px;
+  min-width: 3px;
+  border-radius: 3px;
+  background: #cdd3dd;
+}
+.is-slowest .timeline .bar {
+  background: var(--mantine-color-ink-6);
+}
+.is-failed .timeline .bar {
+  background: var(--mantine-color-red-6);
+}
+.timeline .bar.ai {
+  background: #9fb2e8;
+}
+.is-slowest .timeline .bar.ai {
+  background: var(--mantine-color-ink-6);
+}
+.trace-row.is-failed .timeline .bar {
+  background: var(--mantine-color-red-6);
+}
+.trace-detail {
+  grid-column: 1 / -1;
+  padding: 2px 12px 12px;
+}
+
+@media (max-width: 760px) {
+  .trace-head,
+  .trace-row {
+    grid-template-columns: 1fr 70px 74px;
+  }
+  .trace-head > :nth-child(4),
+  .trace-row > .cell.tl {
+    display: none;
+  }
+}
+
+/* journey (R18) */
+.journey-gap {
+  font-size: 12.5px;
+  color: var(--mantine-color-gray-6);
+  padding: 2px 0 2px 2px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 4px;
+  font-size: 13px;
+}
+.kv dt {
+  color: var(--mantine-color-gray-6);
+}
+.kv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

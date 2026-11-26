@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Complao action log portal (section 6). Services write to CloudWatch Logs; a scheduled
+  Lambda pulls them into a DynamoDB action store; the portal reads only that store.
+
+Parameters:
+  LogGroupPrefix:
+    Type: String
+    Default: /complao/
+    Description: Every log group under this prefix is read. Keep these groups at "Never expire" (R17).
+  LogGroups:
+    Type: String
+    Default: ''
+    Description: Optional comma-separated extra log group names outside the prefix.
+  PortalImageUri:
+    Type: String
+    Default: ''
+    Description: ECR image for the portal (see Dockerfile). Leave empty to deploy only the table and ingester.
+  PortalSecretArn:
+    Type: String
+    Default: ''
+    Description: Secrets Manager secret holding ADMIN_PASSWORD_HASH, ADMIN_TOTP_SECRET and SESSION_SECRET as JSON keys.
+  UserLookupUrl:
+    Type: String
+    Default: ''
+    Description: Read-only Complao endpoint that resolves user IDs to names (R15). POST {"ids":[...]} -> {"<id>":"<name>"}.
+
+Conditions:
+  HasPortal: !Not [!Equals [!Ref PortalImageUri, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    MemorySize: 512
+
+Resources:
+  # ------------------------------------------------------------------ action store (6.4, App. B)
+  ActionStore:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: complao-action-log
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      SSESpecification: { SSEEnabled: true }
+      # R17: kept indefinitely, so no TimeToLiveSpecification.
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+        - { AttributeName: gsi2pk, AttributeType: S }
+        - { AttributeName: gsi2sk, AttributeType: S }
+        - { AttributeName: gsi3pk, AttributeType: S }
+        - { AttributeName: gsi3sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: gsi1 # action by day: action list
+          KeySchema: [{ AttributeName: gsi1pk, KeyType: HASH }, { AttributeName: gsi1sk, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: gsi2 # action by case ID: journeys and case search
+          KeySchema: [{ AttributeName: gsi2pk, KeyType: HASH }, { AttributeName: gsi2sk, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: gsi3 # step by component and day: logs by area
+          KeySchema: [{ AttributeName: gsi3pk, KeyType: HASH }, { AttributeName: gsi3sk, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+
+  # ------------------------------------------------------------------ ingestion (6.3)
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: complao-action-log-ingest
+      CodeUri: ../apps/ingest/dist
+      Handler: index.handler
+      Timeout: 300
+      ReservedConcurrentExecutions: 1 # two pulls never overlap
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ActionStore
+          LOG_GROUP_PREFIX: !Ref LogGroupPrefix
+          LOG_GROUPS: !Ref LogGroups
+      Events:
+        EveryMinute:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: rate(1 minute)
+            RetryPolicy: { MaximumRetryAttempts: 0 }
+      # R14: reads logs, writes only the action store. Nothing on any Complao application resource.
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [logs:FilterLogEvents]
+              Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+            - Effect: Allow
+              Action: [logs:DescribeLogGroups]
+              Resource: '*'
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:Query]
+              Resource: [!GetAtt ActionStore.Arn, !Sub '${ActionStore.Arn}/index/*']
+
+  IngestErrors:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The action log ingester failed 5 runs in a row. The portal will show stale data.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{ Name: FunctionName, Value: !Ref IngestFunction }]
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  # ------------------------------------------------------------------ portal (6.5)
+  # R14: reads the action store; its only writes are the SETTINGS partition (pull setting
+  # and display config) and V#<actionId> view records (R16). IAM cannot scope by sort key,
+  # so the portal can technically write any SETTINGS item; the API only writes "pull" and "config".
+  PortalRole:
+    Type: AWS::IAM::Role
+    Condition: HasPortal
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [tasks.apprunner.amazonaws.com] }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: action-store-read
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:BatchGetItem]
+                Resource: [!GetAtt ActionStore.Arn, !Sub '${ActionStore.Arn}/index/*']
+              - Effect: Allow
+                Action: [dynamodb:PutItem]
+                Resource: !GetAtt ActionStore.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys: ['SETTINGS', 'V#*']
+              - Effect: Allow
+                Action: [secretsmanager:GetSecretValue]
+                Resource: !Ref PortalSecretArn
+
+  PortalAccessRole:
+    Type: AWS::IAM::Role
+    Condition: HasPortal
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: [build.apprunner.amazonaws.com] }
+            Action: sts:AssumeRole
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess]
+
+  Portal:
+    Type: AWS::AppRunner::Service
+    Condition: HasPortal
+    Properties:
+      ServiceName: complao-action-log-portal
+      InstanceConfiguration:
+        Cpu: '0.25 vCPU'
+        Memory: '0.5 GB'
+        InstanceRoleArn: !GetAtt PortalRole.Arn
+      HealthCheckConfiguration: { Protocol: HTTP, Path: /api/auth/me }
+      SourceConfiguration:
+        AutoDeploymentsEnabled: false
+        AuthenticationConfiguration: { AccessRoleArn: !GetAtt PortalAccessRole.Arn }
+        ImageRepository:
+          ImageIdentifier: !Ref PortalImageUri
+          ImageRepositoryType: ECR
+          ImageConfiguration:
+            Port: '8787'
+            RuntimeEnvironmentVariables:
+              - { Name: NODE_ENV, Value: production }
+              - { Name: TABLE_NAME, Value: !Ref ActionStore }
+              - { Name: ADMIN_EMAIL, Value: admin@complao.com }
+              - { Name: USER_LOOKUP_URL, Value: !Ref UserLookupUrl }
+            RuntimeEnvironmentSecrets:
+              - { Name: ADMIN_PASSWORD_HASH, Value: !Sub '${PortalSecretArn}:ADMIN_PASSWORD_HASH::' }
+              - { Name: ADMIN_TOTP_SECRET, Value: !Sub '${PortalSecretArn}:ADMIN_TOTP_SECRET::' }
+              - { Name: SESSION_SECRET, Value: !Sub '${PortalSecretArn}:SESSION_SECRET::' }
+
+Outputs:
+  TableName:
+    Value: !Ref ActionStore
+  IngestFunction:
+    Value: !Ref IngestFunction
+  PortalUrl:
+    Condition: HasPortal
+    Value: !Sub https://${Portal.ServiceUrl}
