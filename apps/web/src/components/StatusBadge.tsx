@@ -65,7 +65,6 @@ export const SESSION_META: Record<SessionStatus, { label: string; color: string;
   expired: { label: 'Expired', color: 'stalled', help: 'Nothing for longer than the session timeout, and no sign-out.' },
 };
 
-export const SESSION_STATUS_OPTIONS = Object.entries(SESSION_META).map(([value, m]) => ({ value, label: m.label }));
 
 export function SessionStatusDot({ status }: { status: SessionStatus }) {
   const m = SESSION_META[status];

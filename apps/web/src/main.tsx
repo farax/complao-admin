@@ -26,7 +26,6 @@ import { HealthPage } from './pages/Health';
 import { JourneyPage } from './pages/Journey';
 import { LivePage } from './pages/Live';
 import { SessionDetailPage } from './pages/SessionDetail';
-import { SessionsPage } from './pages/Sessions';
 import { LoginPage } from './pages/Login';
 import { LogsPage } from './pages/Logs';
 import { SettingsPage } from './pages/Settings';
@@ -57,7 +56,7 @@ const router = (LOCAL_DEMO ? (r: Parameters<typeof createMemoryRouter>[0]) => cr
     children: [
       { index: true, element: <Navigate to="/live" replace /> },
       { path: '/live', element: <LivePage /> },
-      { path: '/sessions', element: <SessionsPage /> },
+      { path: '/sessions', element: <Navigate to="/live" replace /> },
       { path: '/sessions/:id', element: <SessionDetailPage /> },
       { path: '/actions', element: <ActionsPage /> },
       { path: '/actions/:id', element: <ActionDetailPage /> },

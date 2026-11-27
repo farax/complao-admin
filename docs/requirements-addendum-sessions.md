@@ -24,14 +24,13 @@ Login and logout are ordinary actions with `action_type` `Login` and `Logout`. B
 
 ### R22 Sessions
 
-Every sign-in is a session. The portal lists sessions and shows each one in full.
+Every sign-in is a session. The portal shows each one in full, reached by selecting a person on Live or a journey, or from any of their actions. (There is no separate sessions list: Actions filtered by initiator covers "what did this person do".)
 
 Acceptance criteria:
 
 1. A person who signs in, works on two cases and signs out appears as one session with every action in time order, the cases they touched, and how many actions failed.
 2. A session shows **Active** while actions keep arriving, **Idle** after 5 minutes with none, **Signed out** after a logout, and **Expired** after 30 minutes with no logout. Both limits are set in Settings.
-3. Sessions can be filtered by status, role, person and date.
-4. Gaps longer than a minute between actions in a session are shown ("Nothing for 12 min").
+3. Gaps longer than a minute between actions in a session are shown ("Nothing for 12 min").
 
 ### R23 Live view
 
