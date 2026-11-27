@@ -101,6 +101,7 @@ export interface LaneGroup {
   kind: string;
   lanes: Lane[];
   failed: number;
+  stalled: number;
   running: number;
   lastActivityAt: string;
 }

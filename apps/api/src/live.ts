@@ -51,6 +51,8 @@ export interface LaneGroup {
   kind: string;
   lanes: Lane[];
   failed: number;
+  /** actions that went quiet before finishing (R7) */
+  stalled: number;
   running: number;
   lastActivityAt: string;
 }
@@ -104,16 +106,18 @@ function buildLanes(items: { actorId: string; actorRole: string | null; item: La
 
 function groupStats(lanes: Lane[], now: number) {
   let failed = 0,
+    stalled = 0,
     running = 0,
     last = '';
   for (const l of lanes)
     for (const i of l.items) {
       if (i.kind === 'action' && (i.status === 'failed' || i.status === 'partial')) failed++;
+      if (i.kind === 'action' && i.status === 'stalled') stalled++;
       if (i.endedAt === null) running++;
       const end = i.endedAt ?? new Date(now).toISOString();
       if (end > last) last = end;
     }
-  return { failed, running, lastActivityAt: last };
+  return { failed, stalled, running, lastActivityAt: last };
 }
 
 // ---------------------------------------------------------------- sessions (R22)
@@ -269,7 +273,8 @@ export async function liveView(store: ActionStore, cfg: PortalConfig, minutes: n
     const lanes = buildLanes(items);
     return { caseId, kind: caseId ? (kinds.get(caseId) ?? 'Case') : 'Other activity', lanes, ...groupStats(lanes, now) };
   });
-  groups.sort((a, b) => Number(a.caseId === null) - Number(b.caseId === null) || Number(b.failed > 0) - Number(a.failed > 0) || b.lastActivityAt.localeCompare(a.lastActivityAt));
+  // Cases with a problem (failed, partial or stalled) first, then the most recently active.
+  groups.sort((a, b) => Number(a.caseId === null) - Number(b.caseId === null) || Number(b.failed + b.stalled > 0) - Number(a.failed + a.stalled > 0) || b.lastActivityAt.localeCompare(a.lastActivityAt));
 
   const sessionRows = [...sessions.values()].map((s) => toSessionRow(s, cfg, now));
   const people = new Set(sessionRows.filter((s) => s.status === 'active' || s.status === 'idle').map((s) => s.actorId));

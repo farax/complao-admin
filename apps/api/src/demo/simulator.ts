@@ -293,7 +293,11 @@ export const WORK = {
 };
 
 /** The AI review: Bedrock calls with nested validation (the doc's sample audit). */
-export function aiReview(opts: { stallAfterCalls?: number } = {}) {
+/**
+ * `live` makes the review behave like a busy afternoon: Bedrock calls of 20–50 s, so the
+ * review runs for a minute or more and shows as running, and more throttles and outages.
+ */
+export function aiReview(opts: { stallAfterCalls?: number; live?: boolean } = {}) {
   return (r: Rng, ctx: Ctx, at: number): Built => {
     const a = new Action(r, 'Audit', ctx, 'Audit engine', at);
     a.step('Load audit evidence', 'Document store', r.lat(420, 0.5), { details: { document_count: r.int(3, 18) } });
@@ -304,11 +308,11 @@ export function aiReview(opts: { stallAfterCalls?: number } = {}) {
       const tokensIn = r.int(2400, 4200);
       const tokensOut = r.int(700, 1800);
       const veryslow = r.chance(0.004);
-      const latency = veryslow ? r.int(61_000, 75_000) : r.lat(i === calls - 1 ? 14_000 : 8_500, 0.45);
-      if (r.chance(0.02)) {
+      const latency = veryslow ? r.int(61_000, 75_000) : opts.live ? r.int(20_000, 50_000) : r.lat(i === calls - 1 ? 14_000 : 8_500, 0.45);
+      if (r.chance(opts.live ? 0.12 : 0.02)) {
         a.step('Bedrock call', 'Amazon Bedrock', r.lat(300), { status: 'failure', code: 429, details: { model, error_code: 'ThrottlingException', attempt: 1 } });
       }
-      if (r.chance(0.03)) {
+      if (r.chance(opts.live ? 0.08 : 0.03)) {
         a.step('Bedrock call', 'Amazon Bedrock', r.lat(4000), { status: 'failure', code: 503, details: { model, error_code: 'ModelNotReadyException', input_tokens: tokensIn, output_tokens: 0 } });
         a.step('Mark review failed', 'Audit engine', r.lat(40), { details: { reason_code: 'model_unavailable' } });
         return finish(a, 'failure');
@@ -340,6 +344,7 @@ export class AuditEngagement {
   readonly caseId: string;
   readonly people: Record<Who, Person | null>;
   private beats: Beat[];
+  private aiBeat: Beat['work'];
   private i = 0;
   private sessions = new Map<string, SessionSim>();
   next: number;
@@ -350,14 +355,15 @@ export class AuditEngagement {
     start: number,
     private pace: [minMs: number, maxMs: number],
     private sink: (e: Emitted[]) => void,
-    opts: { stall?: boolean } = {},
+    opts: { stall?: boolean; live?: boolean } = {},
   ) {
     this.caseId = uuid(r);
     const auditor = r.pick(roster.auditors);
     const tic = r.pick(roster.tic);
     this.people = { auditor, tic, admin: r.pick(roster.admins), cb: r.chance(0.5) ? r.pick(roster.cb) : null };
     const findings = r.int(1, 3);
-    const aiBeat = aiReview({ stallAfterCalls: opts.stall ? 1 : undefined });
+    const aiBeat = aiReview({ stallAfterCalls: opts.stall ? 1 : undefined, live: opts.live });
+    this.aiBeat = aiBeat;
     this.beats = [
       { who: 'auditor', work: WORK.startAudit([auditor.id, tic.id]) },
       { who: 'auditor', work: WORK.uploadEvidence },
@@ -399,6 +405,12 @@ export class AuditEngagement {
     this.next = Math.max(b.end, at) + this.r.int(this.pace[0], this.pace[1]);
     if (this.done) for (const sess of this.sessions.values()) if (this.r.chance(0.7)) sess.logout(sess.last + this.r.int(30_000, 600_000));
     return !this.done;
+  }
+
+  /** Play the turns before the AI review (all due by `by`), then start the review at `at`. */
+  playToAiReview(by: number, at: number) {
+    while (!this.done && this.beats[this.i].work !== this.aiBeat && this.next <= by) this.step();
+    if (!this.done && this.beats[this.i].work === this.aiBeat) this.step(at);
   }
 
   /** Play every turn due before `until`. */

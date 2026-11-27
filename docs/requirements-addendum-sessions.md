@@ -42,7 +42,7 @@ Acceptance criteria:
 1. With five audits in progress, each with several people, all five appear with a lane for every person who acted in the window.
 2. A bar's length is the action's duration. A running action reaches "now" and grows until it ends. Failed actions are red, partial ones amber.
 3. Sign-ins and sign-outs are shown in the lane of each case the session went on to touch. Activity that touched no case is grouped under "Other activity".
-4. Cases with a failure are listed first.
+4. Cases with a problem (a failed, partial or stalled action) are listed first.
 5. Selecting any bar shows that action's full step tree, including the failing step and its error, without leaving the page. From there you can open the person's session or the case journey.
 6. Updates pause while the pointer is over the timeline, so bars don't move while you're selecting one.
 7. A list of everyone currently signed in, with their role, status and activity, is shown under the timeline.

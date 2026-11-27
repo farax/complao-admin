@@ -57,7 +57,7 @@ export function LivePage() {
   const groups: LaneGroupView[] = useMemo(() => {
     if (!data) return [];
     return data.groups
-      .filter((g) => !problemsOnly || g.failed > 0)
+      .filter((g) => !problemsOnly || g.failed + g.stalled > 0)
       .map((g) => ({ ...g, lanes: roles.length ? g.lanes.filter((l) => roles.includes(l.actorRole ?? '')) : g.lanes }))
       .filter((g) => g.lanes.length)
       .map((g) => ({
@@ -82,8 +82,9 @@ export function LivePage() {
           </Text>
         ),
         aside: (
-          <Text size="xs" c={g.failed ? 'red.7' : 'dimmed'}>
-            {[g.failed ? `${g.failed} failed` : null, g.running ? `${g.running} running` : null].filter(Boolean).join(' · ') || (g.caseId ? 'On track' : '')}
+          <Text size="xs" c={g.failed ? 'red.7' : g.stalled ? 'stalled.6' : 'dimmed'}>
+            {[g.failed ? `${g.failed} failed` : null, g.stalled ? `${g.stalled} stalled` : null, g.running ? `${g.running} running` : null].filter(Boolean).join(' · ') ||
+              (g.caseId ? 'On track' : '')}
           </Text>
         ),
       }));
@@ -120,7 +121,7 @@ export function LivePage() {
           clearable
           w={260}
         />
-        <Switch label="Only cases with a failure" checked={problemsOnly} onChange={(e) => set('problems', e.currentTarget.checked ? '1' : null)} />
+        <Switch label="Only cases with a problem" checked={problemsOnly} onChange={(e) => set('problems', e.currentTarget.checked ? '1' : null)} />
         <Text size="xs" c="dimmed" ml="auto">
           {meta?.pull.lastSuccessAt ? `Logs pulled ${fromNow(meta.pull.lastSuccessAt)}` : ''}
         </Text>

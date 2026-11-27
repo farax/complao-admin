@@ -67,7 +67,8 @@ export async function startDemo(store: ActionStore, days = 7, log: (m: string) =
   }
 
   // The walkthrough cases.
-  const stalled = new AuditEngagement(r, roster, now - 80 * 60_000, [2 * 60_000, 6 * 60_000], cw.add, { stall: true });
+  // Starts early enough that its AI review has gone quiet for over 10 minutes, so it shows Stalled inside the 30-minute window.
+  const stalled = new AuditEngagement(r, roster, now - 38 * 60_000, [2 * 60_000, 4 * 60_000], cw.add, { stall: true });
   stalled.playUntil(now);
   auditWithDroppedEvent(r, roster, now - 3 * 3_600_000, cw.add);
   testAction(r, now - 26 * 60_000, cw.add);
@@ -75,14 +76,17 @@ export async function startDemo(store: ActionStore, days = 7, log: (m: string) =
   // Audits running right now: started in the last hour, each part-way through.
   const live: AuditEngagement[] = [];
   for (let i = 0; i < LIVE_AUDITS; i++) {
-    const e = new AuditEngagement(r, roster, now - r.int(5, 35) * 60_000, LIVE_PACE, cw.add);
-    e.playUntil(now - 30_000);
+    const e = new AuditEngagement(r, roster, now - (i === 0 ? 30 : r.int(5, 35)) * 60_000, LIVE_PACE, cw.add, { live: true });
+    // The first audit is part-way through its AI review when the page opens, so something is running.
+    if (i === 0) e.playToAiReview(now - 2 * 60_000, now - 40_000);
+    else e.playUntil(now - 30_000);
     live.push(e);
   }
   for (let t = historyEnd; t < now; t += r.int(4, 9) * 60_000) browseVisit(r, roster, t, cw.add);
 
   // Backfill through the real puller, then keep pulling on an EventBridge-like minute tick.
-  await store.putPullSetting({ intervalSeconds: 60, paused: false });
+  // Pull every 30 s so running actions are caught mid-flight.
+  await store.putPullSetting({ intervalSeconds: 30, paused: false });
   const res = await pullOnce(store, cw, Date.now() + 600_000, { ...DEFAULT_OPTIONS, initialBackfillMs: (days + 1) * 86_400_000, maxWindowMs: 6 * 3_600_000 });
   log(`[demo] ingested ${res.events} events (${res.newSteps} steps) from a simulated CloudWatch log group`);
 
@@ -91,14 +95,14 @@ export async function startDemo(store: ActionStore, days = 7, log: (m: string) =
   (setInterval(() => {
     const t = Date.now();
     for (let i = 0; i < live.length; i++) {
-      if (live[i].done) live[i] = new AuditEngagement(r, roster, t, LIVE_PACE, cw.add);
+      if (live[i].done) live[i] = new AuditEngagement(r, roster, t, LIVE_PACE, cw.add, { live: true });
       if (live[i].next <= t) live[i].step(t);
     }
     if (r.chance(0.12)) browseVisit(r, roster, t, cw.add);
     if (r.chance(0.02)) registrationJourney(r, roster, t, t + 1, cw.add);
   }, 5_000) as unknown as Timer).unref?.();
 
-  const tick = () => runInvocation(store, cw, Date.now() + 50_000).catch((e) => console.error('[demo] pull failed', e));
+  const tick = () => runInvocation(store, cw, Date.now() + 58_000).catch((e) => console.error('[demo] pull failed', e));
   (setInterval(tick, 60_000) as unknown as Timer).unref?.();
   (setTimeout(tick, 5_000) as unknown as Timer).unref?.();
 }
