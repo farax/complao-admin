@@ -1,9 +1,15 @@
 import { bucketIndex, emptyBuckets } from './histogram';
 import { dayOf } from './rules';
-import type { ActionEndInput, ActionStartInput, ActionStore, Page, RangeQuery, StepTouch } from './store';
+import type { ActionEndInput, ActionStartInput, ActionStore, Page, RangeQuery, RegistryKind, SessionTouch, StepTouch, Who } from './store';
 import { mergeConfig } from './store';
 import { DEFAULT_CONFIG, DEFAULT_PULL } from './types';
-import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, StepRecord } from './types';
+import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, SessionRecord, StepRecord } from './types';
+
+type MutableSession = Omit<SessionRecord, 'actionIds' | 'caseIds' | 'failedActionIds'> & {
+  actionIds: Set<string>;
+  caseIds: Set<string>;
+  failedActionIds: Set<string>;
+};
 
 type MutableAction = Omit<ActionRecord, 'stepIds' | 'parentIds' | 'failedStepIds' | 'components'> & {
   stepIds: Set<string>;
@@ -18,7 +24,8 @@ export class MemoryStore implements ActionStore {
   steps = new Map<string, Map<string, StepRecord>>();
   health = new Map<string, HealthWindow>();
   cost = new Map<string, CostDay>();
-  registry = { type: new Set<string>(), component: new Set<string>() };
+  sessions = new Map<string, MutableSession>();
+  registry = { type: new Set<string>(), component: new Set<string>(), role: new Set<string>() };
   checkpoints = new Map<string, number>();
   views = new Map<string, string[]>();
   pull: PullSetting = { ...DEFAULT_PULL };
@@ -31,6 +38,8 @@ export class MemoryStore implements ActionStore {
         actionId: id,
         actionType: null,
         actorId: seed.actorId,
+        actorRole: null,
+        sessionId: null,
         caseId: null,
         startedAt: seed.startedAt,
         hasStart: false,
@@ -57,6 +66,11 @@ export class MemoryStore implements ActionStore {
     if (iso > a.lastEventAt) a.lastEventAt = iso;
   }
 
+  private who(a: MutableAction, w: Who, authoritative = false) {
+    if (w.sessionId && (authoritative || !a.sessionId)) a.sessionId = w.sessionId;
+    if (w.actorRole && (authoritative || !a.actorRole)) a.actorRole = w.actorRole;
+  }
+
   async putStep(step: StepRecord) {
     let m = this.steps.get(step.actionId);
     if (!m) this.steps.set(step.actionId, (m = new Map()));
@@ -72,6 +86,7 @@ export class MemoryStore implements ActionStore {
     a.startedAt = i.startedAt;
     a.actorId = i.actorId;
     a.hasStart = true;
+    this.who(a, i, true);
     if (i.caseId) a.caseId = i.caseId;
     a.components.add(i.component);
     this.bumpLast(a, i.startedAt);
@@ -83,14 +98,16 @@ export class MemoryStore implements ActionStore {
     a.endedAt = i.endedAt;
     a.latencyMs = i.latencyMs;
     a.endStatus = i.status;
+    this.who(a, i);
     if (!a.caseId && i.caseId) a.caseId = i.caseId;
     if (!a.hasStart && i.startedAt < a.startedAt) a.startedAt = i.startedAt;
     a.components.add(i.component);
     this.bumpLast(a, i.endedAt);
   }
 
-  async touchActionFromStep({ step, isNew, completedAt, ai }: StepTouch) {
+  async touchActionFromStep({ step, isNew, completedAt, ai, sessionId, actorRole }: StepTouch) {
     const a = this.ensure(step.actionId, { startedAt: step.startedAt, actorId: step.actorId });
+    this.who(a, { sessionId, actorRole });
     if (!a.caseId && step.caseId) a.caseId = step.caseId;
     a.stepIds.add(step.stepId);
     if (step.parentStepId) a.parentIds.add(step.parentStepId);
@@ -126,7 +143,34 @@ export class MemoryStore implements ActionStore {
     c.tokensOut += tokensOut;
   }
 
-  async register(kind: 'type' | 'component', value: string) {
+  async touchSession(t: SessionTouch) {
+    let s = this.sessions.get(t.sessionId);
+    if (!s) {
+      s = {
+        sessionId: t.sessionId,
+        actorId: t.actorId,
+        actorRole: t.actorRole,
+        startedAt: t.at,
+        lastEventAt: t.at,
+        hasLogin: false,
+        loggedOutAt: null,
+        actionIds: new Set(),
+        caseIds: new Set(),
+        failedActionIds: new Set(),
+      };
+      this.sessions.set(t.sessionId, s);
+    }
+    if (!s.actorRole && t.actorRole) s.actorRole = t.actorRole;
+    if (t.at < s.startedAt) s.startedAt = t.at;
+    if (t.at > s.lastEventAt) s.lastEventAt = t.at;
+    s.actionIds.add(t.actionId);
+    if (t.caseId) s.caseIds.add(t.caseId);
+    if (t.failed) s.failedActionIds.add(t.actionId);
+    if (t.login) s.hasLogin = true;
+    if (t.logout && (!s.loggedOutAt || t.at > s.loggedOutAt)) s.loggedOutAt = t.at;
+  }
+
+  async register(kind: RegistryKind, value: string) {
     this.registry[kind].add(value);
   }
   async getCheckpoint(g: string) {
@@ -200,8 +244,32 @@ export class MemoryStore implements ActionStore {
     return [...this.cost.values()].filter((c) => c.day >= fromDay && c.day <= toDay).sort((a, b) => a.day.localeCompare(b.day));
   }
 
-  async listRegistry(kind: 'type' | 'component') {
+  async listRegistry(kind: RegistryKind) {
     return [...this.registry[kind]].sort();
+  }
+
+  private freezeSession(s: MutableSession): SessionRecord {
+    return { ...s, actionIds: [...s.actionIds], caseIds: [...s.caseIds], failedActionIds: [...s.failedActionIds] };
+  }
+
+  async getSession(id: string) {
+    const s = this.sessions.get(id);
+    return s ? this.freezeSession(s) : null;
+  }
+
+  async querySessionsByDay(day: string, q: RangeQuery) {
+    const all = [...this.sessions.values()]
+      .filter((s) => dayOf(s.startedAt) === day && s.startedAt >= q.fromIso && s.startedAt <= q.toIso)
+      .sort((a, b) => (q.newestFirst === false ? 1 : -1) * (a.startedAt.localeCompare(b.startedAt) || a.sessionId.localeCompare(b.sessionId)))
+      .map((s) => this.freezeSession(s));
+    return this.page(all, q);
+  }
+
+  async queryActionsBySession(id: string) {
+    return [...this.actions.values()]
+      .filter((a) => a.sessionId === id)
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.actionId.localeCompare(b.actionId))
+      .map((a) => this.freeze(a));
   }
   async getPull() {
     return { ...this.pull };

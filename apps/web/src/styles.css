@@ -270,3 +270,222 @@ body {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* ---------------------------------------------------------------- swimlanes (R23, R24) */
+.lanes {
+  --who: 190px;
+}
+.lanes-axis {
+  display: grid;
+  grid-template-columns: var(--who) minmax(0, 1fr);
+  font-size: 11.5px;
+  color: var(--mantine-color-gray-6);
+  margin-bottom: 6px;
+  position: sticky;
+  top: 60px;
+  background: var(--paper);
+  z-index: 2;
+  padding: 4px 0;
+}
+.lanes-ticks {
+  position: relative;
+  height: 16px;
+  margin-right: 14px;
+}
+.lanes-ticks span {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lanes-ticks span:first-child {
+  transform: none;
+}
+.lanes-ticks span:last-child {
+  transform: translateX(-100%);
+}
+.lanes-ticks span.now {
+  color: var(--mantine-color-ink-7);
+  font-weight: 500;
+}
+.lanes-group {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 8px 14px 8px 0;
+  margin-bottom: 10px;
+}
+.lanes-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 2px 0 6px 14px;
+  font-size: 14px;
+}
+.lane {
+  display: grid;
+  grid-template-columns: var(--who) minmax(0, 1fr);
+  align-items: center;
+  min-height: 30px;
+}
+.lane-who {
+  all: unset;
+  box-sizing: border-box;
+  padding: 0 10px 0 14px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.lane-who:disabled {
+  cursor: default;
+}
+.lane-who:not(:disabled):hover .lane-name {
+  text-decoration: underline;
+}
+.lane-who:focus-visible {
+  outline: 2px solid var(--mantine-color-ink-6);
+  outline-offset: -2px;
+}
+.lane-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lane-role {
+  font-size: 11.5px;
+  color: var(--mantine-color-gray-6);
+  flex: none;
+}
+.lane-track {
+  position: relative;
+  height: 30px;
+  border-top: 1px dashed #e6e9ee;
+  top: 15px;
+}
+.lane-grid {
+  position: absolute;
+  top: -15px;
+  height: 30px;
+  border-left: 1px solid #f0f2f5;
+}
+.lane-bar,
+.lane-pin {
+  all: unset;
+  box-sizing: border-box;
+  position: absolute;
+  cursor: pointer;
+}
+.lane-bar {
+  top: -9px;
+  height: 18px;
+  min-width: 7px;
+  border-radius: 4px;
+  background: #c7ced9;
+}
+.lane-bar.completed {
+  background: #c7ced9;
+}
+.lane-bar.running,
+.lane-bar.in_progress {
+  background: var(--mantine-color-ink-6);
+}
+.lane-bar.failed {
+  background: var(--mantine-color-red-6);
+}
+.lane-bar.partial {
+  background: var(--mantine-color-yellow-6);
+}
+.lane-bar.stalled {
+  background: var(--mantine-color-stalled-4);
+}
+.lane-bar:hover,
+.lane-pin:hover {
+  filter: brightness(0.9);
+}
+.lane-bar:focus-visible,
+.lane-pin:focus-visible,
+.lane-bar.sel,
+.lane-pin.sel {
+  outline: 2px solid var(--ink-text);
+  outline-offset: 2px;
+}
+.lane-pin {
+  top: -6px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 12px;
+  background: #fff;
+  border: 2px solid #8b95a7;
+}
+.lane-pin.logout {
+  border-radius: 2px;
+  transform: rotate(45deg);
+  width: 10px;
+  height: 10px;
+  top: -5px;
+  margin-left: -5px;
+}
+.lane-pin.failed {
+  border-color: var(--mantine-color-red-6);
+}
+.lanes-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
+  color: var(--mantine-color-gray-7);
+  margin-top: 4px;
+}
+.lanes-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.lanes-legend i {
+  position: static !important;
+  display: inline-block;
+  margin: 0 !important;
+}
+.lanes-legend .lane-bar {
+  width: 16px;
+  height: 10px;
+  min-width: 0;
+}
+.lanes-legend .lane-pin {
+  width: 10px;
+  height: 10px;
+}
+.lanes-legend .lane-pin.logout {
+  width: 8px;
+  height: 8px;
+}
+@media (max-width: 700px) {
+  .lanes {
+    --who: 112px;
+  }
+  .lane-role {
+    display: none;
+  }
+}
+
+.row-failed-card {
+  background: #fdf3f3;
+  border-color: #f3c7c7;
+}
+@keyframes pulse-green {
+  0% { box-shadow: 0 0 0 0 rgba(47, 158, 68, 0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(47, 158, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 158, 68, 0); }
+}
+.pulse-green {
+  animation: pulse-green 1.8s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-green { animation: none; }
+}

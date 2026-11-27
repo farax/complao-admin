@@ -11,6 +11,19 @@ import type { ActionDetailResponse, Names, PortalConfig, StepView } from '../lib
 
 export function ActionDetailPage() {
   const { id = '' } = useParams();
+  return (
+    <Stack gap="md">
+      <Back />
+      <ActionDetailBody id={id} />
+    </Stack>
+  );
+}
+
+/**
+ * Everything about one action: header, journey strip and step tree. Used by the action page
+ * and by the drawer that opens from Live, Sessions and journeys.
+ */
+export function ActionDetailBody({ id, compact = false }: { id: string; compact?: boolean }) {
   const navigate = useNavigate();
   const { data: meta } = useMeta();
   const live = useLiveInterval();
@@ -32,12 +45,9 @@ export function ActionDetailPage() {
   if (q.isLoading) return <Loader m="xl" />;
   if (q.isError || !q.data)
     return (
-      <Stack align="flex-start">
-        <Back />
-        <Alert color="gray" title="Action not found">
-          {(q.error as Error)?.message}
-        </Alert>
-      </Stack>
+      <Alert color="gray" title="Action not found">
+        {(q.error as Error)?.message}
+      </Alert>
     );
 
   const d = q.data;
@@ -47,13 +57,6 @@ export function ActionDetailPage() {
 
   return (
     <Stack gap="md">
-      <Group justify="space-between">
-        <Back />
-        <Text size="xs" c="dimmed">
-          Opened {d.views} time{d.views === 1 ? '' : 's'}
-        </Text>
-      </Group>
-
       {/* ---------------- header */}
       <Paper p="lg" radius="md">
         <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
@@ -65,6 +68,15 @@ export function ActionDetailPage() {
             </Group>
             <Text size="sm" c="dimmed">
               Started {fmtTimeSec(a.startedAt)} by <b style={{ color: 'var(--ink-text)', fontWeight: 500 }}>{a.actorId ? d.names[a.actorId] ?? a.actorId : 'unknown'}</b>
+              {a.actorRole ? ` (${a.actorRole})` : ''}
+              {a.sessionId && (
+                <>
+                  {' · '}
+                  <Anchor component={Link} to={`/sessions/${encodeURIComponent(a.sessionId)}`} size="sm">
+                    View this person’s session
+                  </Anchor>
+                </>
+              )}
             </Text>
           </Stack>
           <Group gap="xl" wrap="wrap">
@@ -136,6 +148,7 @@ export function ActionDetailPage() {
       <StepTree steps={d.steps} spanMs={d.spanMs} names={d.names} cfg={meta?.config} />
       <Text size="xs" c="dimmed">
         Bars show when each step ran within the action. The slowest step is highlighted; failed steps are red and opened. Select any step for its full record.
+        {compact ? '' : ` Opened ${d.views} time${d.views === 1 ? '' : 's'}.`}
       </Text>
     </Stack>
   );

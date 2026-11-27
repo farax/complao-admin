@@ -1,6 +1,14 @@
-import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, StepRecord, StepStatus } from './types';
+import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, SessionRecord, StepRecord, StepStatus } from './types';
 
-export interface ActionStartInput {
+export type RegistryKind = 'type' | 'component' | 'role';
+
+/** Who did it and in which visit: carried by every action-level write. */
+export interface Who {
+  sessionId: string | null;
+  actorRole: string | null;
+}
+
+export interface ActionStartInput extends Who {
   actionId: string;
   actionType: string;
   actorId: string;
@@ -9,7 +17,7 @@ export interface ActionStartInput {
   startedAt: string;
 }
 
-export interface ActionEndInput {
+export interface ActionEndInput extends Who {
   actionId: string;
   actorId: string;
   caseId: string | null;
@@ -20,11 +28,24 @@ export interface ActionEndInput {
   status: StepStatus;
 }
 
-export interface StepTouch {
+export interface StepTouch extends Who {
   step: StepRecord;
   isNew: boolean;
   completedAt: string;
   ai: { costUsd: number; tokensIn: number; tokensOut: number } | null;
+}
+
+export interface SessionTouch {
+  sessionId: string;
+  actorId: string;
+  actorRole: string | null;
+  /** When the event happened (its completion time). */
+  at: string;
+  actionId: string;
+  caseId: string | null;
+  failed: boolean;
+  login: boolean;
+  logout: boolean;
 }
 
 export interface Page<T> {
@@ -57,7 +78,8 @@ export interface ActionStore {
   touchActionFromStep(t: StepTouch): Promise<void>;
   addHealth(component: string, windowStart: string, latencyMs: number, failure: boolean, serverFailure: boolean): Promise<void>;
   addCost(day: string, costUsd: number, tokensIn: number, tokensOut: number): Promise<void>;
-  register(kind: 'type' | 'component', value: string): Promise<void>;
+  touchSession(t: SessionTouch): Promise<void>;
+  register(kind: RegistryKind, value: string): Promise<void>;
   getCheckpoint(logGroup: string): Promise<number | null>;
   putCheckpoint(logGroup: string, ms: number): Promise<void>;
   recordPull(update: Partial<PullSetting>): Promise<void>;
@@ -71,7 +93,11 @@ export interface ActionStore {
   queryStepsByComponentDay(component: string, day: string, q: RangeQuery): Promise<Page<StepRecord>>;
   getHealthWindows(component: string, fromIso: string, toIso: string): Promise<HealthWindow[]>;
   getCostDays(fromDay: string, toDay: string): Promise<CostDay[]>;
-  listRegistry(kind: 'type' | 'component'): Promise<string[]>;
+  listRegistry(kind: RegistryKind): Promise<string[]>;
+  getSession(sessionId: string): Promise<SessionRecord | null>;
+  /** Sessions that started on this day (UTC), newest first. */
+  querySessionsByDay(day: string, q: RangeQuery): Promise<Page<SessionRecord>>;
+  queryActionsBySession(sessionId: string): Promise<ActionRecord[]>;
   getPull(): Promise<PullSetting>;
   getConfig(): Promise<PortalConfig>;
 

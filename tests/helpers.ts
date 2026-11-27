@@ -1,4 +1,4 @@
-import type { LogEvent } from '@complao/core';
+import { DEFAULT_CONFIG, ingestEvents, validateEvent, type ActionStore, type LogEvent } from '@complao/core';
 import type { LogSource } from '@complao/ingest';
 
 export const A = (n: number) => n.toString(16).padStart(32, 'a');
@@ -44,3 +44,41 @@ export function sampleAudit(actionId: string, start: number, opts: { caseId?: st
   if (opts.end !== false) ev.push({ ts: t + 3, e: { ...base, event_type: 'action_end', component: 'Audit engine', started_at: iso(start), latency_ms: t + 3 - start, status: opts.failBedrock ? 'failure' : 'success' } });
   return ev;
 }
+
+// ---------------------------------------------------------------- sessions scenario (R22–R24)
+export const CASE = 'audit-0001';
+const cfg = DEFAULT_CONFIG;
+export type Ev = Record<string, unknown>;
+const base = (n: number, actor: string, role: string, session: string, caseId: string | null) => ({ action_id: A(n), actor_id: actor, actor_role: role, session_id: session, case_id: caseId });
+export function action(n: number, type: string, actor: string, role: string, session: string, caseId: string | null, at: number, opts: { fail?: boolean; open?: boolean; ms?: number } = {}): Ev[] {
+  const b = base(5000 + n, actor, role, session, caseId); // own ID range: the emulator table is shared between tests
+  const ms = opts.ms ?? 300;
+  const out: Ev[] = [
+    { ...b, event_type: 'action_start', action_type: type, component: 'Audit engine', started_at: iso(at) },
+    { ...b, event_type: 'step', step_id: 's1', step_name: type, component: 'Audit engine', started_at: iso(at + 1), latency_ms: ms, status: opts.fail ? 'failure' : 'success', response_code: opts.fail ? 503 : 200 },
+  ];
+  if (!opts.open) out.push({ ...b, event_type: 'action_end', component: 'Audit engine', started_at: iso(at), latency_ms: ms + 5, status: opts.fail ? 'failure' : 'success' });
+  return out;
+}
+
+/** Two people working on one audit, each in their own session, plus a visit that touches no case. */
+export function scenario(now: number): LogEvent[] {
+  const m = (min: number) => now - min * 60_000;
+  const evs: Ev[] = [
+    ...action(1, 'Login', 'usr_aud', 'Auditor', 'sess_a', null, m(25)),
+    ...action(2, 'Start audit', 'usr_aud', 'Auditor', 'sess_a', CASE, m(24)),
+    ...action(3, 'Audit', 'usr_aud', 'Auditor', 'sess_a', CASE, m(10), { fail: true }),
+    ...action(4, 'Login', 'usr_tic', 'TIC', 'sess_t', null, m(20)),
+    ...action(5, 'Answer query', 'usr_tic', 'TIC', 'sess_t', CASE, m(18)),
+    ...action(6, 'Upload evidence', 'usr_tic', 'TIC', 'sess_t', CASE, m(1), { open: true }),
+    ...action(7, 'Logout', 'usr_tic', 'TIC', 'sess_t_old', null, m(200)),
+    ...action(8, 'Login', 'usr_cb', 'CB', 'sess_c', null, m(12)),
+    ...action(9, 'Logout', 'usr_cb', 'CB', 'sess_c', null, m(11)),
+  ];
+  return evs.map((e) => validateEvent(e).event!).filter(Boolean) as LogEvent[];
+}
+
+export async function load(store: ActionStore, now: number) {
+  await ingestEvents(store, scenario(now), cfg);
+}
+

@@ -122,7 +122,7 @@ function ConfigCards({ config, types, components }: { config: PortalConfig; type
       <Paper p="lg">
         <Title order={2}>Thresholds</Title>
         <Text size="sm" c="dimmed" mt={4} mb="md">
-          When an action counts as stalled, and when a component counts as degraded.
+          When an action counts as stalled, when a component counts as degraded, and when a session counts as idle or expired.
         </Text>
         <SimpleGrid cols={{ base: 1, sm: 3 }}>
           <NumberInput
@@ -150,6 +150,26 @@ function ConfigCards({ config, types, components }: { config: PortalConfig; type
             max={599}
             value={cfg.serverErrorMinCode}
             onChange={(v) => patch((c) => (c.serverErrorMinCode = Number(v) || 500))}
+          />
+        </SimpleGrid>
+        <SimpleGrid cols={{ base: 1, sm: 3 }} mt="md">
+          <NumberInput
+            label="Session idle after"
+            description="Minutes with no action"
+            min={1}
+            max={240}
+            value={cfg.sessionIdleMinutes}
+            onChange={(v) => patch((c) => (c.sessionIdleMinutes = Number(v) || 5))}
+            suffix=" min"
+          />
+          <NumberInput
+            label="Session expired after"
+            description="Minutes with no action and no sign-out"
+            min={5}
+            max={1440}
+            value={cfg.sessionTimeoutMinutes}
+            onChange={(v) => patch((c) => (c.sessionTimeoutMinutes = Number(v) || 30))}
+            suffix=" min"
           />
         </SimpleGrid>
         <Text size="xs" c="dimmed" mt="sm">

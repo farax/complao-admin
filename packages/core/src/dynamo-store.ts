@@ -10,10 +10,10 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { bucketIndex, emptyBuckets } from './histogram';
 import { dayOf } from './rules';
-import type { ActionEndInput, ActionStartInput, ActionStore, Page, RangeQuery, StepTouch } from './store';
+import type { ActionEndInput, ActionStartInput, ActionStore, Page, RangeQuery, RegistryKind, SessionTouch, StepTouch, Who } from './store';
 import { mergeConfig } from './store';
 import { DEFAULT_CONFIG, DEFAULT_PULL } from './types';
-import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, StepRecord } from './types';
+import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, SessionRecord, StepRecord } from './types';
 
 /**
  * Appendix B key design, one table:
@@ -29,7 +29,11 @@ import type { ActionRecord, CostDay, HealthWindow, PortalConfig, PullSetting, St
  *  Portal config     SETTINGS               config
  *  Checkpoint        SETTINGS               CKPT#<logGroup>
  *  View record (R16) V#<actionId>           <viewedAt>#<rand>
+ *  Session (R22)     SS#<sessionId>         #H                         gsi1: SD#<day> / <startedAt>#<id>  (sessions list)
+ *  (action header, continued)                                          gsi4: SN#<sessionId> / <startedAt>#<id> (session detail)
  */
+const REG_PREFIX: Record<RegistryKind, string> = { type: 'T#', component: 'C#', role: 'R#' };
+
 export const KEYS = {
   action: (id: string) => ({ pk: `A#${id}`, sk: '#H' }),
   step: (s: { actionId: string; startedAt: string; stepId: string }) => ({ pk: `A#${s.actionId}`, sk: `S#${s.startedAt}#${s.stepId}` }),
@@ -104,6 +108,7 @@ export class DynamoStore implements ActionStore {
       'gsi1sk = :g1s',
       'lastEventAt = if_not_exists(lastEventAt, :st)',
     ];
+    this.who(set, values, i, true);
     if (i.caseId) {
       values[':case'] = i.caseId;
       values[':g2'] = `K#${i.caseId}`;
@@ -144,6 +149,7 @@ export class DynamoStore implements ActionStore {
       'gsi1pk = if_not_exists(gsi1pk, :g1)',
       'gsi1sk = if_not_exists(gsi1sk, :g1s)',
     ];
+    this.who(set, values, i, false);
     if (i.caseId) {
       values[':case'] = i.caseId;
       values[':g2'] = `K#${i.caseId}`;
@@ -153,7 +159,7 @@ export class DynamoStore implements ActionStore {
     await this.bumpLastEvent(i.actionId, i.endedAt);
   }
 
-  async touchActionFromStep({ step, isNew, completedAt, ai }: StepTouch) {
+  async touchActionFromStep({ step, isNew, completedAt, ai, sessionId, actorRole }: StepTouch) {
     const values: Record<string, unknown> = {
       ':id': step.actionId,
       ':st': step.startedAt,
@@ -176,6 +182,7 @@ export class DynamoStore implements ActionStore {
       'gsi1sk = if_not_exists(gsi1sk, :g1s)',
       'lastEventAt = if_not_exists(lastEventAt, :st)',
     ];
+    this.who(set, values, { sessionId, actorRole }, false);
     const add = ['stepIds :sid', 'components :comp'];
     if (step.caseId) {
       values[':case'] = step.caseId;
@@ -196,6 +203,68 @@ export class DynamoStore implements ActionStore {
     }
     await this.update(KEYS.action(step.actionId), `SET ${set.join(', ')} ADD ${add.join(', ')}`, values);
     await this.bumpLastEvent(step.actionId, completedAt);
+  }
+
+  /** Session and role on the action header, plus the session index (gsi4). The start event is authoritative. */
+  private who(set: string[], values: Record<string, unknown>, w: Who, authoritative: boolean) {
+    const v = (expr: string, name: string) => (authoritative ? `${name} = ${expr}` : `${name} = if_not_exists(${name}, ${expr})`);
+    if (w.sessionId) {
+      values[':sess'] = w.sessionId;
+      values[':g4'] = `SN#${w.sessionId}`;
+      set.push(v(':sess', 'sessionId'), v(':g4', 'gsi4pk'), v(':g1s', 'gsi4sk'));
+    }
+    if (w.actorRole) {
+      values[':role'] = w.actorRole;
+      set.push(v(':role', 'actorRole'));
+    }
+  }
+
+  async touchSession(t: SessionTouch) {
+    const key = { pk: `SS#${t.sessionId}`, sk: '#H' };
+    const values: Record<string, unknown> = {
+      ':e': 'session',
+      ':id': t.sessionId,
+      ':actor': t.actorId,
+      ':at': t.at,
+      ':g1': `SD#${dayOf(t.at)}`,
+      ':g1s': `${t.at}#${t.sessionId}`,
+      ':a': new Set([t.actionId]),
+    };
+    const set = [
+      'entity = :e',
+      'sessionId = :id',
+      'actorId = if_not_exists(actorId, :actor)',
+      'startedAt = if_not_exists(startedAt, :at)',
+      'lastEventAt = if_not_exists(lastEventAt, :at)',
+      'gsi1pk = if_not_exists(gsi1pk, :g1)',
+      'gsi1sk = if_not_exists(gsi1sk, :g1s)',
+      t.login ? 'hasLogin = :t' : 'hasLogin = if_not_exists(hasLogin, :f)',
+    ];
+    if (t.login) values[':t'] = true;
+    else values[':f'] = false;
+    const add = ['actionIds :a'];
+    if (t.actorRole) {
+      values[':role'] = t.actorRole;
+      set.push('actorRole = if_not_exists(actorRole, :role)');
+    }
+    if (t.caseId) {
+      values[':c'] = new Set([t.caseId]);
+      add.push('caseIds :c');
+    }
+    if (t.failed) add.push('failedActionIds :a');
+    await this.update(key, `SET ${set.join(', ')} ADD ${add.join(', ')}`, values);
+    // Earliest start and latest activity, whatever order events arrive in.
+    await this.conditional(key, 'SET startedAt = :at, gsi1pk = :g1, gsi1sk = :g1s', 'startedAt > :at', { ':at': t.at, ':g1': values[':g1'], ':g1s': values[':g1s'] });
+    await this.conditional(key, 'SET lastEventAt = :at', 'lastEventAt < :at', { ':at': t.at });
+    if (t.logout) await this.conditional(key, 'SET loggedOutAt = :at', 'attribute_not_exists(loggedOutAt) OR loggedOutAt < :at', { ':at': t.at });
+  }
+
+  private async conditional(key: Record<string, string>, expr: string, cond: string, values: Record<string, unknown>) {
+    try {
+      await this.doc.send(new UpdateCommand({ TableName: this.table, Key: key, UpdateExpression: expr, ConditionExpression: cond, ExpressionAttributeValues: values }));
+    } catch (e) {
+      if ((e as Error).name !== 'ConditionalCheckFailedException') throw e;
+    }
   }
 
   private async bumpLastEvent(actionId: string, iso: string) {
@@ -246,8 +315,8 @@ export class DynamoStore implements ActionStore {
     );
   }
 
-  async register(kind: 'type' | 'component', value: string) {
-    const sk = `${kind === 'type' ? 'T' : 'C'}#${value}`;
+  async register(kind: RegistryKind, value: string) {
+    const sk = `${REG_PREFIX[kind]}${value}`;
     if (this.registered.has(sk)) return;
     await this.doc.send(new PutCommand({ TableName: this.table, Item: { pk: 'REG', sk, kind, value } }));
     this.registered.add(sk);
@@ -388,13 +457,43 @@ export class DynamoStore implements ActionStore {
     }));
   }
 
-  async listRegistry(kind: 'type' | 'component') {
+  async listRegistry(kind: RegistryKind) {
     const items = await this.queryAll({
       TableName: this.table,
       KeyConditionExpression: 'pk = :pk AND begins_with(sk, :p)',
-      ExpressionAttributeValues: { ':pk': 'REG', ':p': kind === 'type' ? 'T#' : 'C#' },
+      ExpressionAttributeValues: { ':pk': 'REG', ':p': REG_PREFIX[kind] },
     });
     return items.map((i) => String(i.value)).sort();
+  }
+
+  async getSession(id: string) {
+    const r = await this.doc.send(new GetCommand({ TableName: this.table, Key: { pk: `SS#${id}`, sk: '#H' } }));
+    return r.Item ? toSession(r.Item) : null;
+  }
+
+  async querySessionsByDay(day: string, q: RangeQuery): Promise<Page<SessionRecord>> {
+    const r = await this.doc.send(
+      new QueryCommand({
+        TableName: this.table,
+        IndexName: 'gsi1',
+        KeyConditionExpression: 'gsi1pk = :d AND gsi1sk BETWEEN :a AND :b',
+        ExpressionAttributeValues: { ':d': `SD#${day}`, ':a': q.fromIso, ':b': `${q.toIso}~` },
+        ScanIndexForward: q.newestFirst === false,
+        Limit: q.limit,
+        ExclusiveStartKey: (q.next as Record<string, unknown>) ?? undefined,
+      }),
+    );
+    return { items: (r.Items ?? []).map(toSession), next: r.LastEvaluatedKey ?? null };
+  }
+
+  async queryActionsBySession(id: string) {
+    const items = await this.queryAll({
+      TableName: this.table,
+      IndexName: 'gsi4',
+      KeyConditionExpression: 'gsi4pk = :k',
+      ExpressionAttributeValues: { ':k': `SN#${id}` },
+    });
+    return items.map(toAction).sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.actionId.localeCompare(b.actionId));
   }
 
   async getPull(): Promise<PullSetting> {
@@ -491,6 +590,8 @@ function toAction(it: Record<string, any>): ActionRecord {
     actionId: it.actionId,
     actionType: it.actionType ?? null,
     actorId: it.actorId ?? null,
+    actorRole: it.actorRole ?? null,
+    sessionId: it.sessionId ?? null,
     caseId: it.caseId ?? null,
     startedAt: it.startedAt,
     hasStart: Boolean(it.hasStart),
@@ -507,6 +608,21 @@ function toAction(it: Record<string, any>): ActionRecord {
     aiCalls: Number(it.aiCalls ?? 0),
     tokensIn: Number(it.tokensIn ?? 0),
     tokensOut: Number(it.tokensOut ?? 0),
+  };
+}
+
+function toSession(it: Record<string, any>): SessionRecord {
+  return {
+    sessionId: it.sessionId,
+    actorId: it.actorId ?? null,
+    actorRole: it.actorRole ?? null,
+    startedAt: it.startedAt,
+    lastEventAt: it.lastEventAt ?? it.startedAt,
+    hasLogin: Boolean(it.hasLogin),
+    loggedOutAt: it.loggedOutAt ?? null,
+    actionIds: arr(it.actionIds),
+    caseIds: arr(it.caseIds),
+    failedActionIds: arr(it.failedActionIds),
   };
 }
 

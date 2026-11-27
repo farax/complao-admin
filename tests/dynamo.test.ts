@@ -5,8 +5,9 @@ import { pullOnce } from '@complao/ingest';
 import dynalite from 'dynalite';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { caseLanes, liveView, listSessions, sessionDetail } from '../apps/api/src/live';
 import { actionDetail, componentHealth, journey, listActions, stepsByArea } from '../apps/api/src/queries';
-import { A, ArraySource, T0, iso, sampleAudit } from './helpers';
+import { A, ArraySource, CASE, T0, iso, load, sampleAudit, scenario } from './helpers';
 
 /**
  * Runs the same ingestion through DynamoStore (against a local DynamoDB emulator) and
@@ -31,9 +32,9 @@ beforeAll(async () => {
     new CreateTableCommand({
       TableName: 'complao-test',
       BillingMode: 'PAY_PER_REQUEST',
-      AttributeDefinitions: ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'gsi3pk', 'gsi3sk'].map((n) => ({ AttributeName: n, AttributeType: 'S' as const })),
+      AttributeDefinitions: ['pk', 'sk', 'gsi1pk', 'gsi1sk', 'gsi2pk', 'gsi2sk', 'gsi3pk', 'gsi3sk', 'gsi4pk', 'gsi4sk'].map((n) => ({ AttributeName: n, AttributeType: 'S' as const })),
       KeySchema: [{ AttributeName: 'pk', KeyType: 'HASH' }, { AttributeName: 'sk', KeyType: 'RANGE' }],
-      GlobalSecondaryIndexes: [gsi(1), gsi(2), gsi(3)],
+      GlobalSecondaryIndexes: [gsi(1), gsi(2), gsi(3), gsi(4)],
     }),
   );
 });
@@ -95,6 +96,29 @@ describe('DynamoStore matches MemoryStore', () => {
     const r6 = (xs: { costUsd: number }[]) => xs.map((x) => ({ ...x, costUsd: Math.round(x.costUsd * 1e6) / 1e6 }));
     expect(r6(await dyn.getCostDays('2026-11-13', '2026-11-14'))).toEqual(r6(await mem.getCostDays('2026-11-13', '2026-11-14')));
     expect((await dyn.listRegistry('component')).sort()).toEqual((await mem.listRegistry('component')).sort());
+  });
+
+  it('gives the same sessions, live view and journey lanes (R22–R24)', async () => {
+    const now = Date.now();
+    const dyn = new DynamoStore({ tableName: 'complao-test', client });
+    const mem = new MemoryStore();
+    await load(dyn, now);
+    await load(mem, now);
+    // Read twice: the overlap must not change anything.
+    await ingestEvents(dyn, scenario(now), cfg);
+    await ingestEvents(mem, scenario(now), cfg);
+    const c = DEFAULT_CONFIG;
+    const norm = (x: unknown) => JSON.parse(JSON.stringify(x, (_k, v) => (Array.isArray(v) && v.every((i) => typeof i === 'string') ? [...v].sort() : v)));
+    for (const id of ['sess_a', 'sess_t', 'sess_c', 'sess_t_old']) {
+      expect(norm(await sessionDetail(dyn, c, id, now))).toEqual(norm(await sessionDetail(mem, c, id, now)));
+    }
+    expect((await sessionDetail(dyn, c, 'sess_a', now))!.session).toMatchObject({ actionCount: 3, failedActions: 1, status: 'idle' });
+    expect((await sessionDetail(dyn, c, 'sess_c', now))!.session.status).toBe('ended');
+    const range = { from: new Date(now - 6 * 3_600_000).toISOString(), to: new Date(now).toISOString(), limit: 50 };
+    expect(norm(await listSessions(dyn, c, range, now))).toEqual(norm(await listSessions(mem, c, range, now)));
+    expect(norm(await liveView(dyn, c, 30, now))).toEqual(norm(await liveView(mem, c, 30, now)));
+    expect(norm(await caseLanes(dyn, c, CASE, now))).toEqual(norm(await caseLanes(mem, c, CASE, now)));
+    expect((await dyn.listRegistry('role')).sort()).toEqual(['Auditor', 'CB', 'TIC']);
   });
 
   it('keeps founder settings separate from ingestion run state', async () => {

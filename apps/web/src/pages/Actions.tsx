@@ -20,9 +20,10 @@ export function ActionsPage() {
   const types = params.get('type')?.split(',').filter(Boolean) ?? [];
   const statuses = params.get('status')?.split(',').filter(Boolean) ?? [];
   const actor = params.get('actor') ?? '';
+  const roles = params.get('role')?.split(',').filter(Boolean) ?? [];
   const range = rangeFromParams(params);
   const { from, to } = resolveRange(range);
-  const filtered = types.length > 0 || statuses.length > 0 || Boolean(actor) || range.preset !== '24h';
+  const filtered = types.length > 0 || statuses.length > 0 || roles.length > 0 || Boolean(actor) || range.preset !== '24h';
 
   const update = (fn: (p: URLSearchParams) => void) => {
     const p = new URLSearchParams(params);
@@ -32,9 +33,9 @@ export function ActionsPage() {
   const setList = (key: string, v: string[]) => update((p) => (v.length ? p.set(key, v.join(',')) : p.delete(key)));
 
   const query = useInfiniteQuery({
-    queryKey: ['actions', { types, statuses, actor, from, to }],
+    queryKey: ['actions', { types, statuses, roles, actor, from, to }],
     queryFn: ({ pageParam }) =>
-      api<ActionListResponse>(`/actions${qs({ from, to, type: types, status: statuses, actor, limit: 50, cursor: pageParam as string | undefined })}`),
+      api<ActionListResponse>(`/actions${qs({ from, to, type: types, status: statuses, role: roles, actor, limit: 50, cursor: pageParam as string | undefined })}`),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.cursor ?? undefined,
     refetchInterval: live,
@@ -87,6 +88,15 @@ export function ActionsPage() {
           clearable
           w={230}
         />
+        <MultiSelect
+          aria-label="Role"
+          placeholder={roles.length ? undefined : 'All roles'}
+          data={meta?.roles ?? []}
+          value={roles}
+          onChange={(v) => setList('role', v)}
+          clearable
+          w={200}
+        />
         <Select
           aria-label="Initiator"
           placeholder="Anyone"
@@ -134,7 +144,20 @@ export function ActionsPage() {
                 </Group>
               ),
             },
-            { accessor: 'actorId', title: 'Initiator', render: (r) => (r.actorId ? names[r.actorId] ?? r.actorId : '–') },
+            {
+              accessor: 'actorId',
+              title: 'Initiator',
+              render: (r) => (
+                <Group gap={6} wrap="nowrap">
+                  <span>{r.actorId ? names[r.actorId] ?? r.actorId : '–'}</span>
+                  {r.actorRole && (
+                    <Text span size="xs" c="dimmed">
+                      {r.actorRole}
+                    </Text>
+                  )}
+                </Group>
+              ),
+            },
             {
               accessor: 'status',
               title: 'Status',

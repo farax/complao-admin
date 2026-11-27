@@ -20,6 +20,8 @@ export interface ActionRow {
   actionType: string | null;
   caseId: string | null;
   actorId: string | null;
+  actorRole: string | null;
+  sessionId: string | null;
   startedAt: string;
   status: ActionStatus;
   incomplete: boolean;
@@ -39,6 +41,8 @@ export function toRow(a: ActionRecord, cfg: PortalConfig, now = Date.now()): Act
     actionType: a.actionType,
     caseId: a.caseId,
     actorId: a.actorId,
+    actorRole: a.actorRole,
+    sessionId: a.sessionId,
     startedAt: a.startedAt,
     status,
     incomplete: missingSteps(a).incomplete,
@@ -75,7 +79,7 @@ export function decodeCursor(s: unknown): Cursor | null {
  * Walk day partitions newest first, applying in-memory filters, until `limit` rows match
  * or the scan budget is spent. Returns a cursor to continue from.
  */
-async function walkDays<T>(
+export async function walkDays<T>(
   days: string[],
   fetchPage: (day: string, next: unknown) => Promise<{ items: T[]; next: unknown | null }>,
   keep: (item: T) => boolean,
@@ -110,6 +114,7 @@ export interface ListFilters {
   types?: string[];
   statuses?: (ActionStatus | 'incomplete')[];
   actor?: string;
+  roles?: string[];
   caseId?: string;
   limit: number;
   cursor?: string;
@@ -134,11 +139,12 @@ export async function listActions(store: ActionStore, cfg: PortalConfig, f: List
   return { items: res.items.map((a) => toRow(a, cfg, now)), cursor: res.cursor };
 }
 
-const hasFilters = (f: ListFilters) => Boolean(f.types?.length || f.statuses?.length || f.actor);
+const hasFilters = (f: ListFilters) => Boolean(f.types?.length || f.statuses?.length || f.actor || f.roles?.length);
 
 function matches(r: ActionRow, f: ListFilters): boolean {
   if (f.types?.length && !f.types.includes(r.actionType ?? '')) return false;
   if (f.actor && r.actorId !== f.actor) return false;
+  if (f.roles?.length && !f.roles.includes(r.actorRole ?? '')) return false;
   if (f.statuses?.length) {
     const ok = f.statuses.some((s) => (s === 'incomplete' ? r.incomplete : r.status === s));
     if (!ok) return false;

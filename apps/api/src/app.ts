@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { authRouter } from './auth';
 import type { Env } from './env';
 import { collectUserIds, type NameResolver } from './names';
+import { caseLanes, liveView, listSessions, sessionDetail } from './live';
 import { actionDetail, componentDrilldown, componentHealth, journey, listActions, PERIODS, stepsByArea, type Period } from './queries';
 
 const TRACE_ID = /^[0-9a-f]{32}$/i;
@@ -48,8 +49,8 @@ export function createApp(env: Env, store: ActionStore, names: NameResolver) {
 
   // ---------------------------------------------------------------- meta
   api.get('/meta', async (_req, res) => {
-    const [types, components, cfg, pull] = await Promise.all([store.listRegistry('type'), store.listRegistry('component'), config(), store.getPull()]);
-    res.json({ types, components, config: cfg, pull, serverTime: new Date().toISOString(), demo: env.demo });
+    const [types, components, roles, cfg, pull] = await Promise.all([store.listRegistry('type'), store.listRegistry('component'), store.listRegistry('role'), config(), store.getPull()]);
+    res.json({ types, components, roles, config: cfg, pull, serverTime: new Date().toISOString(), demo: env.demo });
   });
 
   // ---------------------------------------------------------------- search (R5)
@@ -77,6 +78,7 @@ export function createApp(env: Env, store: ActionStore, names: NameResolver) {
         type: z.string().optional(),
         status: z.string().optional(),
         actor: z.string().optional(),
+        role: z.string().optional(),
         caseId: z.string().optional(),
         limit: z.coerce.number().int().min(1).max(200).default(50),
         cursor: z.string().optional(),
@@ -91,6 +93,7 @@ export function createApp(env: Env, store: ActionStore, names: NameResolver) {
       types: q.type?.split(',').filter(Boolean),
       statuses: q.status?.split(',').filter(Boolean) as (ActionStatus | 'incomplete')[],
       actor: q.actor,
+      roles: q.role?.split(',').filter(Boolean),
       caseId: q.caseId,
       limit: q.limit,
       cursor: q.cursor,
@@ -116,7 +119,46 @@ export function createApp(env: Env, store: ActionStore, names: NameResolver) {
     const cfg = await config();
     const j = await journey(store, cfg, String(req.params.caseId));
     if (!j.actions.length) return res.status(404).json({ error: 'No actions carry that case ID.' });
-    res.json({ ...j, names: await names.resolve(j.actions.map((a) => a.actorId ?? '')) });
+    const lanes = await caseLanes(store, cfg, String(req.params.caseId));
+    res.json({ ...j, lanes, names: await names.resolve([...j.actions.map((a) => a.actorId ?? ''), ...lanes.lanes.map((l) => l.actorId)]) });
+  });
+
+  // ---------------------------------------------------------------- live and sessions (R22, R23)
+  api.get('/live', async (req, res) => {
+    const minutes = Math.min(Math.max(Number(req.query.minutes ?? 30), 5), 240);
+    const v = await liveView(store, await config(), minutes);
+    const ids = [...v.groups.flatMap((g) => g.lanes.map((l) => l.actorId)), ...v.sessions.map((s) => s.actorId ?? '')];
+    res.json({ ...v, names: await names.resolve(ids) });
+  });
+
+  api.get('/sessions', async (req, res) => {
+    const q = z
+      .object({
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        status: z.string().optional(),
+        role: z.string().optional(),
+        actor: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+        cursor: z.string().optional(),
+      })
+      .parse(req.query);
+    const r = await listSessions(store, await config(), {
+      from: q.from ?? new Date(Date.now() - 86_400_000).toISOString(),
+      to: q.to ?? new Date().toISOString(),
+      statuses: q.status?.split(',').filter(Boolean) as never,
+      roles: q.role?.split(',').filter(Boolean),
+      actor: q.actor,
+      limit: q.limit,
+      cursor: q.cursor,
+    });
+    res.json({ ...r, names: await names.resolve(r.items.map((s) => s.actorId ?? '')) });
+  });
+
+  api.get('/sessions/:id', async (req, res) => {
+    const d = await sessionDetail(store, await config(), String(req.params.id));
+    if (!d) return res.status(404).json({ error: 'No session with that ID yet. It may appear after the next pull.' });
+    res.json({ ...d, names: await names.resolve([d.session.actorId ?? '']) });
   });
 
   // ---------------------------------------------------------------- component health (R19, R20, R21)
@@ -195,6 +237,8 @@ export function createApp(env: Env, store: ActionStore, names: NameResolver) {
   const priceSchema = z.object({ inputPer1k: z.number().min(0), outputPer1k: z.number().min(0) });
   const configSchema = z.object({
     stalledMinutes: z.number().min(1).max(1440),
+    sessionIdleMinutes: z.number().min(1).max(240),
+    sessionTimeoutMinutes: z.number().min(5).max(1440),
     slowStepMs: z.number().min(1000).max(3_600_000),
     serverErrorMinCode: z.number().int().min(400).max(599),
     displayNames: z.object({ actionTypes: z.record(z.string(), z.string()), components: z.record(z.string(), z.string()) }),

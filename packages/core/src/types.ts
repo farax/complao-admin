@@ -15,6 +15,10 @@ export interface LogEvent {
   status?: StepStatus;
   response_code?: string | number;
   actor_id: string;
+  /** The role the actor acted in: Auditor, TIC, CB, Admin… (a code, not a name). */
+  actor_role?: string | null;
+  /** One sign-in, from login to logout. Ties together everything one person did in that visit. */
+  session_id?: string | null;
   case_id?: string | null;
   details?: Record<string, unknown>;
 }
@@ -27,6 +31,8 @@ export interface ActionRecord {
   actionId: string;
   actionType: string | null;
   actorId: string | null;
+  actorRole: string | null;
+  sessionId: string | null;
   caseId: string | null;
   startedAt: string; // from action_start, or the earliest step if the start event is missing
   hasStart: boolean;
@@ -43,6 +49,23 @@ export interface ActionRecord {
   aiCalls: number;
   tokensIn: number;
   tokensOut: number;
+}
+
+/** Derived session status (R22). */
+export type SessionStatus = 'active' | 'idle' | 'ended' | 'expired';
+
+/** One person's visit, from sign-in to sign-out (R22). Holds IDs only. */
+export interface SessionRecord {
+  sessionId: string;
+  actorId: string | null;
+  actorRole: string | null;
+  startedAt: string;
+  lastEventAt: string;
+  hasLogin: boolean;
+  loggedOutAt: string | null;
+  actionIds: string[];
+  caseIds: string[];
+  failedActionIds: string[];
 }
 
 export interface StepRecord {
@@ -102,6 +125,10 @@ export interface PriceEntry {
 export interface PortalConfig {
   /** Minutes with no event before an unfinished action shows Stalled (R7). */
   stalledMinutes: number;
+  /** A session with no event for this long shows Idle (R22). */
+  sessionIdleMinutes: number;
+  /** A session with no event for this long, and no sign-out, shows Expired (R22). */
+  sessionTimeoutMinutes: number;
   /** A step longer than this flags its component Degraded (R20). */
   slowStepMs: number;
   /** A failed step with a response code at or above this counts as server-side (R20). */
@@ -114,6 +141,8 @@ export interface PortalConfig {
 
 export const DEFAULT_CONFIG: PortalConfig = {
   stalledMinutes: 10,
+  sessionIdleMinutes: 5,
+  sessionTimeoutMinutes: 30,
   slowStepMs: 60_000,
   serverErrorMinCode: 500,
   displayNames: {
@@ -140,3 +169,8 @@ export const DEFAULT_PULL: PullSetting = {
 
 export const MIN_INTERVAL_SECONDS = 30;
 export const MAX_INTERVAL_SECONDS = 86_400;
+
+/** Action types that end a session when they start. */
+export const LOGOUT_ACTION_TYPES = ['Logout', 'Sign out'];
+/** Action types that begin a session. */
+export const LOGIN_ACTION_TYPES = ['Login', 'Sign in'];

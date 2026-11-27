@@ -1,6 +1,6 @@
 import { aiCostUsd, dayOf, isServerFailure, tokenCounts, windowOf } from './rules';
 import type { ActionStore } from './store';
-import type { LogEvent, PortalConfig, StepRecord } from './types';
+import { LOGIN_ACTION_TYPES, LOGOUT_ACTION_TYPES, type LogEvent, type PortalConfig, type StepRecord } from './types';
 
 export interface IngestStats {
   events: number;
@@ -19,6 +19,7 @@ export async function ingestEvents(store: ActionStore, events: LogEvent[], cfg: 
   const stats: IngestStats = { events: events.length, newSteps: 0, duplicateSteps: 0, starts: 0, ends: 0 };
   const seenComponents = new Set<string>();
   const seenTypes = new Set<string>();
+  const seenRoles = new Set<string>();
 
   // Starts first, then steps, then ends, so a batch holding a whole action lands in order.
   const order = { action_start: 0, step: 1, action_end: 2 } as const;
@@ -29,6 +30,27 @@ export async function ingestEvents(store: ActionStore, events: LogEvent[], cfg: 
       seenComponents.add(ev.component);
       await store.register('component', ev.component);
     }
+    if (ev.actor_role && !seenRoles.has(ev.actor_role)) {
+      seenRoles.add(ev.actor_role);
+      await store.register('role', ev.actor_role);
+    }
+    const who = { sessionId: ev.session_id ?? null, actorRole: ev.actor_role ?? null };
+    const completedAt = new Date(new Date(ev.started_at).getTime() + (ev.latency_ms ?? 0)).toISOString();
+    // R22: every event with a session ID extends that session.
+    if (ev.session_id) {
+      const isStart = ev.event_type === 'action_start';
+      await store.touchSession({
+        sessionId: ev.session_id,
+        actorId: ev.actor_id,
+        actorRole: ev.actor_role ?? null,
+        at: completedAt,
+        actionId: ev.action_id,
+        caseId: ev.case_id ?? null,
+        failed: (ev.event_type === 'step' || ev.event_type === 'action_end') && ev.status === 'failure',
+        login: isStart && LOGIN_ACTION_TYPES.includes(ev.action_type ?? ''),
+        logout: isStart && LOGOUT_ACTION_TYPES.includes(ev.action_type ?? ''),
+      });
+    }
 
     if (ev.event_type === 'action_start') {
       stats.starts++;
@@ -37,6 +59,7 @@ export async function ingestEvents(store: ActionStore, events: LogEvent[], cfg: 
         await store.register('type', ev.action_type);
       }
       await store.applyActionStart({
+        ...who,
         actionId: ev.action_id,
         actionType: ev.action_type!,
         actorId: ev.actor_id,
@@ -49,8 +72,9 @@ export async function ingestEvents(store: ActionStore, events: LogEvent[], cfg: 
 
     if (ev.event_type === 'action_end') {
       stats.ends++;
-      const endedAt = new Date(new Date(ev.started_at).getTime() + (ev.latency_ms ?? 0)).toISOString();
+      const endedAt = completedAt;
       await store.applyActionEnd({
+        ...who,
         actionId: ev.action_id,
         actorId: ev.actor_id,
         caseId: ev.case_id ?? null,
@@ -89,8 +113,8 @@ export async function ingestEvents(store: ActionStore, events: LogEvent[], cfg: 
     if (isNew) stats.newSteps++;
     else stats.duplicateSteps++;
 
-    const completedAt = new Date(new Date(step.startedAt).getTime() + step.latencyMs).toISOString();
     await store.touchActionFromStep({
+      ...who,
       step,
       isNew,
       completedAt,

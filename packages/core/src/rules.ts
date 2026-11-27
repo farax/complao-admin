@@ -1,4 +1,4 @@
-import type { ActionRecord, ActionStatus, PortalConfig, PriceEntry, StepRecord } from './types';
+import type { ActionRecord, ActionStatus, PortalConfig, PriceEntry, SessionRecord, SessionStatus, StepRecord } from './types';
 
 /** R7: In progress, Completed, Failed, Partial or Stalled. */
 export function deriveStatus(a: ActionRecord, cfg: Pick<PortalConfig, 'stalledMinutes'>, now = Date.now()): ActionStatus {
@@ -10,6 +10,19 @@ export function deriveStatus(a: ActionRecord, cfg: Pick<PortalConfig, 'stalledMi
   const idleMs = now - new Date(a.lastEventAt).getTime();
   if (idleMs >= cfg.stalledMinutes * 60_000) return 'stalled';
   return 'in_progress';
+}
+
+/** R22: Active while events keep arriving, Idle after a pause, Ended on sign-out, Expired after the timeout. */
+export function deriveSessionStatus(
+  s: SessionRecord,
+  cfg: Pick<PortalConfig, 'sessionIdleMinutes' | 'sessionTimeoutMinutes'>,
+  now = Date.now(),
+): SessionStatus {
+  if (s.loggedOutAt) return 'ended';
+  const idle = now - new Date(s.lastEventAt).getTime();
+  if (idle >= cfg.sessionTimeoutMinutes * 60_000) return 'expired';
+  if (idle >= cfg.sessionIdleMinutes * 60_000) return 'idle';
+  return 'active';
 }
 
 /**

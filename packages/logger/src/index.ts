@@ -16,6 +16,10 @@ export type StepStatus = 'success' | 'failure' | 'skipped';
 export interface ActionContext {
   actionId: string;
   actorId: string;
+  /** The role the person is acting in: Auditor, TIC, CB, Admin. */
+  actorRole: string | null;
+  /** The sign-in session, from the auth layer (e.g. the session or token ID). */
+  sessionId: string | null;
   caseId: string | null;
   component: string;
   /** Current parent step, for nesting. */
@@ -45,10 +49,12 @@ export function createActionLogger(opts: LoggerOptions) {
      * Start a new action (a login, an audit, a registration stage). Writes action_start and
      * returns a handle; call `end` when the action finishes.
      */
-    startAction(input: { actionType: string; actorId: string; caseId?: string | null }) {
+    startAction(input: { actionType: string; actorId: string; caseId?: string | null; sessionId?: string | null; actorRole?: string | null }) {
       const ctx: ActionContext = {
         actionId: newTraceId(),
         actorId: input.actorId,
+        actorRole: input.actorRole ?? null,
+        sessionId: input.sessionId ?? null,
         caseId: input.caseId ?? null,
         component: opts.component,
         parentStepId: null,
@@ -61,6 +67,8 @@ export function createActionLogger(opts: LoggerOptions) {
         component: opts.component,
         started_at: new Date(startedAt).toISOString(),
         actor_id: ctx.actorId,
+        actor_role: ctx.actorRole,
+        session_id: ctx.sessionId,
         case_id: ctx.caseId,
       });
       return {
@@ -80,6 +88,8 @@ export function createActionLogger(opts: LoggerOptions) {
             latency_ms: Date.now() - startedAt,
             status,
             actor_id: ctx.actorId,
+            actor_role: ctx.actorRole,
+            session_id: ctx.sessionId,
             case_id: ctx.caseId,
           }),
       };
@@ -89,10 +99,24 @@ export function createActionLogger(opts: LoggerOptions) {
      * Continue an action in a downstream service, from the traceparent header or a queue
      * message attribute. The case ID travels with the record, so pass it from the database.
      */
-    continueAction<T>(input: { traceparent: string; actorId: string; caseId?: string | null; parentStepId?: string | null }, fn: () => T): T {
+    continueAction<T>(
+      input: { traceparent: string; actorId: string; caseId?: string | null; parentStepId?: string | null; sessionId?: string | null; actorRole?: string | null },
+      fn: () => T,
+    ): T {
       const actionId = parseTraceparent(input.traceparent);
       if (!actionId) return fn(); // no context: run the work, log nothing
-      return als.run({ actionId, actorId: input.actorId, caseId: input.caseId ?? null, component: opts.component, parentStepId: input.parentStepId ?? null }, fn);
+      return als.run(
+        {
+          actionId,
+          actorId: input.actorId,
+          actorRole: input.actorRole ?? null,
+          sessionId: input.sessionId ?? null,
+          caseId: input.caseId ?? null,
+          component: opts.component,
+          parentStepId: input.parentStepId ?? null,
+        },
+        fn,
+      );
     },
 
     /**
@@ -124,6 +148,8 @@ export function createActionLogger(opts: LoggerOptions) {
           status,
           response_code: String(responseCode),
           actor_id: parent.actorId,
+          actor_role: parent.actorRole,
+          session_id: parent.sessionId,
           case_id: parent.caseId,
           details: Object.keys(details).length ? details : undefined,
         });

@@ -56,6 +56,13 @@ export function validateEvent(raw: unknown): ParseResult {
     started_at: startedAt,
     case_id: str(r.case_id) || null,
   };
+  const sessionId = str(r.session_id);
+  if (sessionId) {
+    if (sessionId.length > 128) return { error: 'bad session_id' };
+    ev.session_id = sessionId;
+  }
+  const role = str(r.actor_role);
+  if (role) ev.actor_role = role.slice(0, 64);
 
   if (eventType === 'action_start') {
     const t = str(r.action_type);

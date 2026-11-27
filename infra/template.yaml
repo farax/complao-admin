@@ -56,11 +56,13 @@ Resources:
         - { AttributeName: gsi2sk, AttributeType: S }
         - { AttributeName: gsi3pk, AttributeType: S }
         - { AttributeName: gsi3sk, AttributeType: S }
+        - { AttributeName: gsi4pk, AttributeType: S }
+        - { AttributeName: gsi4sk, AttributeType: S }
       KeySchema:
         - { AttributeName: pk, KeyType: HASH }
         - { AttributeName: sk, KeyType: RANGE }
       GlobalSecondaryIndexes:
-        - IndexName: gsi1 # action by day: action list
+        - IndexName: gsi1 # action by day: action list; session by day (SD#): sessions list and Live
           KeySchema: [{ AttributeName: gsi1pk, KeyType: HASH }, { AttributeName: gsi1sk, KeyType: RANGE }]
           Projection: { ProjectionType: ALL }
         - IndexName: gsi2 # action by case ID: journeys and case search
@@ -68,6 +70,9 @@ Resources:
           Projection: { ProjectionType: ALL }
         - IndexName: gsi3 # step by component and day: logs by area
           KeySchema: [{ AttributeName: gsi3pk, KeyType: HASH }, { AttributeName: gsi3sk, KeyType: RANGE }]
+          Projection: { ProjectionType: ALL }
+        - IndexName: gsi4 # action by session: session detail (R22)
+          KeySchema: [{ AttributeName: gsi4pk, KeyType: HASH }, { AttributeName: gsi4sk, KeyType: RANGE }]
           Projection: { ProjectionType: ALL }
 
   # ------------------------------------------------------------------ ingestion (6.3)

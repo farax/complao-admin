@@ -1,9 +1,10 @@
-import type { ActionStatus, PortalConfig, PullSetting, StepStatus } from '@complao/core/shared';
-export type { ActionStatus, PortalConfig, PullSetting, StepStatus };
+import type { ActionStatus, PortalConfig, PullSetting, SessionStatus, StepStatus } from '@complao/core/shared';
+export type { ActionStatus, PortalConfig, PullSetting, SessionStatus, StepStatus };
 
 export interface Meta {
   types: string[];
   components: string[];
+  roles: string[];
   config: PortalConfig;
   pull: PullSetting;
   serverTime: string;
@@ -15,6 +16,8 @@ export interface ActionRow {
   actionType: string | null;
   caseId: string | null;
   actorId: string | null;
+  actorRole: string | null;
+  sessionId: string | null;
   startedAt: string;
   status: ActionStatus;
   incomplete: boolean;
@@ -68,6 +71,67 @@ export interface JourneyResponse {
   caseId: string;
   actions: (ActionRow & { waitBeforeMs: number | null })[];
   totalMs: number;
+  names: Names;
+  lanes: { kind: string; lanes: Lane[]; from: string; to: string; sessions: number };
+}
+
+export type LaneItemKind = 'action' | 'login' | 'logout';
+
+export interface LaneItem {
+  actionId: string;
+  actionType: string | null;
+  kind: LaneItemKind;
+  startedAt: string;
+  endedAt: string | null;
+  status: ActionStatus;
+  incomplete: boolean;
+  failedSteps: number;
+  sessionId: string | null;
+}
+
+export interface Lane {
+  actorId: string;
+  actorRole: string | null;
+  sessionIds: string[];
+  items: LaneItem[];
+}
+
+export interface LaneGroup {
+  caseId: string | null;
+  kind: string;
+  lanes: Lane[];
+  failed: number;
+  running: number;
+  lastActivityAt: string;
+}
+
+export interface SessionRow {
+  sessionId: string;
+  actorId: string | null;
+  actorRole: string | null;
+  status: SessionStatus;
+  startedAt: string;
+  lastEventAt: string;
+  endedAt: string | null;
+  durationMs: number;
+  actionCount: number;
+  caseIds: string[];
+  failedActions: number;
+}
+
+export interface LiveResponse {
+  from: string;
+  to: string;
+  groups: LaneGroup[];
+  stats: { activeSessions: number; idleSessions: number; people: number; running: number; failed: number; cases: number };
+  sessions: SessionRow[];
+  names: Names;
+}
+
+export interface SessionDetailResponse {
+  session: SessionRow;
+  actions: (ActionRow & { gapBeforeMs: number | null; kind: LaneItemKind })[];
+  cases: { caseId: string; kind: string; actionsInSession: number; totalActions: number }[];
   names: Names;
 }
 

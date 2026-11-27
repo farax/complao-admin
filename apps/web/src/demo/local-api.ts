@@ -5,6 +5,7 @@
 import { DEFAULT_CONFIG, MAX_INTERVAL_SECONDS, MIN_INTERVAL_SECONDS, MemoryStore, type ActionStatus, type PortalConfig } from '@complao/core/browser';
 import { demoNames, startDemo } from '../../../api/src/demo/demo';
 import { collectUserIds } from '../../../api/src/names';
+import { caseLanes, liveView, listSessions, sessionDetail } from '../../../api/src/live';
 import { actionDetail, componentDrilldown, componentHealth, journey, listActions, PERIODS, stepsByArea, type Period } from '../../../api/src/queries';
 
 const store = new MemoryStore();
@@ -41,8 +42,8 @@ export async function localApi(path: string, method = 'GET', body?: unknown): Pr
   if (p.startsWith('/auth/')) return { ok: true, next: 'done' };
 
   if (p === '/meta') {
-    const [types, components, pull] = await Promise.all([store.listRegistry('type'), store.listRegistry('component'), store.getPull()]);
-    return { types, components, config: cfg, pull, serverTime: new Date().toISOString(), demo: true };
+    const [types, components, roles, pull] = await Promise.all([store.listRegistry('type'), store.listRegistry('component'), store.listRegistry('role'), store.getPull()]);
+    return { types, components, roles, config: cfg, pull, serverTime: new Date().toISOString(), demo: true };
   }
 
   if (p === '/search') {
@@ -63,6 +64,7 @@ export async function localApi(path: string, method = 'GET', body?: unknown): Pr
       types: list('type'),
       statuses: list('status') as (ActionStatus | 'incomplete')[],
       actor: q.get('actor') ?? undefined,
+      roles: list('role'),
       limit: Number(q.get('limit') ?? 50),
       cursor: q.get('cursor') ?? undefined,
     });
@@ -81,9 +83,34 @@ export async function localApi(path: string, method = 'GET', body?: unknown): Pr
 
   m = /^\/cases\/(.+)$/.exec(p);
   if (m) {
-    const j = await journey(store, cfg, decodeURIComponent(m[1]));
+    const caseId = decodeURIComponent(m[1]);
+    const j = await journey(store, cfg, caseId);
     if (!j.actions.length) throw new HttpError(404, 'No actions carry that case ID.');
-    return { ...j, names: await names.resolve(j.actions.map((a) => a.actorId ?? '')) };
+    const lanes = await caseLanes(store, cfg, caseId);
+    return { ...j, lanes, names: await names.resolve([...j.actions.map((a) => a.actorId ?? ''), ...lanes.lanes.map((l) => l.actorId)]) };
+  }
+
+  if (p === '/live') {
+    const v = await liveView(store, cfg, Math.min(Math.max(Number(q.get('minutes') ?? 30), 5), 240));
+    return { ...v, names: await names.resolve([...v.groups.flatMap((g) => g.lanes.map((l) => l.actorId)), ...v.sessions.map((s) => s.actorId ?? '')]) };
+  }
+  if (p === '/sessions') {
+    const r = await listSessions(store, cfg, {
+      from: q.get('from') ?? new Date(Date.now() - 86_400_000).toISOString(),
+      to: q.get('to') ?? new Date().toISOString(),
+      statuses: list('status') as never,
+      roles: list('role'),
+      actor: q.get('actor') ?? undefined,
+      limit: Number(q.get('limit') ?? 50),
+      cursor: q.get('cursor') ?? undefined,
+    });
+    return { ...r, names: await names.resolve(r.items.map((x) => x.actorId ?? '')) };
+  }
+  m = /^\/sessions\/(.+)$/.exec(p);
+  if (m) {
+    const d = await sessionDetail(store, cfg, decodeURIComponent(m[1]));
+    if (!d) throw new HttpError(404, 'No session with that ID yet. It may appear after the next pull.');
+    return { ...d, names: await names.resolve([d.session.actorId ?? '']) };
   }
 
   if (p === '/health') return { period: period(q.get('period')), rows: await componentHealth(store, cfg, period(q.get('period'))), thresholds: { slowStepMs: cfg.slowStepMs } };

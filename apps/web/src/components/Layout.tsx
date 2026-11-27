@@ -1,7 +1,7 @@
 import { AppShell, Badge, Burger, Group, NavLink, Stack, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure, useInterval } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconActivityHeartbeat, IconListDetails, IconLogout, IconSearch, IconSettings, IconStack2 } from '@tabler/icons-react';
+import { IconActivityHeartbeat, IconBroadcast, IconListDetails, IconLogout, IconSearch, IconSettings, IconStack2, IconUsers } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -9,7 +9,9 @@ import { api, LOCAL_DEMO, useMeta } from '../lib/api';
 import { fmtTimeSec, fromNow } from '../lib/format';
 
 const NAV = [
+  { to: '/live', label: 'Live', icon: IconBroadcast, hint: 'Who is doing what, right now' },
   { to: '/actions', label: 'Actions', icon: IconListDetails, hint: 'Every action, newest first' },
+  { to: '/sessions', label: 'Sessions', icon: IconUsers, hint: 'Every sign-in, login to logout' },
   { to: '/health', label: 'Component health', icon: IconActivityHeartbeat, hint: 'How each part of the platform is behaving' },
   { to: '/logs', label: 'Logs by area', icon: IconStack2, hint: 'Every step one component recorded' },
   { to: '/settings', label: 'Settings', icon: IconSettings, hint: 'Log pull, thresholds, names and prices' },
@@ -26,7 +28,7 @@ export function Layout() {
         <Group h="100%" px="md" justify="space-between" wrap="nowrap" gap="md">
           <Group gap="sm" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Open navigation" />
-            <UnstyledButton component={RouterLink} to="/actions" className="brand">
+            <UnstyledButton component={RouterLink} to="/live" className="brand">
               <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden>
                 <rect width="32" height="32" rx="7" fill="#17233F" />
                 <path d="M9 10h6M12 16h11M12 22h7" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />

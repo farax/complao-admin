@@ -24,6 +24,9 @@ import { ActionDetailPage } from './pages/ActionDetail';
 import { ActionsPage } from './pages/Actions';
 import { HealthPage } from './pages/Health';
 import { JourneyPage } from './pages/Journey';
+import { LivePage } from './pages/Live';
+import { SessionDetailPage } from './pages/SessionDetail';
+import { SessionsPage } from './pages/Sessions';
 import { LoginPage } from './pages/Login';
 import { LogsPage } from './pages/Logs';
 import { SettingsPage } from './pages/Settings';
@@ -43,7 +46,7 @@ function RequireSession({ children }: { children: ReactNode }) {
 }
 
 // The static preview runs inside a sandboxed frame, so it keeps its route in memory.
-const router = (LOCAL_DEMO ? (r: Parameters<typeof createMemoryRouter>[0]) => createMemoryRouter(r, { initialEntries: ['/actions'] }) : createBrowserRouter)([
+const router = (LOCAL_DEMO ? (r: Parameters<typeof createMemoryRouter>[0]) => createMemoryRouter(r, { initialEntries: ['/live'] }) : createBrowserRouter)([
   { path: '/login', element: <LoginPage /> },
   {
     element: (
@@ -52,14 +55,17 @@ const router = (LOCAL_DEMO ? (r: Parameters<typeof createMemoryRouter>[0]) => cr
       </RequireSession>
     ),
     children: [
-      { index: true, element: <Navigate to="/actions" replace /> },
+      { index: true, element: <Navigate to="/live" replace /> },
+      { path: '/live', element: <LivePage /> },
+      { path: '/sessions', element: <SessionsPage /> },
+      { path: '/sessions/:id', element: <SessionDetailPage /> },
       { path: '/actions', element: <ActionsPage /> },
       { path: '/actions/:id', element: <ActionDetailPage /> },
       { path: '/cases/:caseId', element: <JourneyPage /> },
       { path: '/health', element: <HealthPage /> },
       { path: '/logs', element: <LogsPage /> },
       { path: '/settings', element: <SettingsPage /> },
-      { path: '*', element: <Navigate to="/actions" replace /> },
+      { path: '*', element: <Navigate to="/live" replace /> },
     ],
   },
 ]);
