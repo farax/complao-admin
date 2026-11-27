@@ -1,16 +1,14 @@
-import { Anchor, Badge, Group, MultiSelect, Paper, SegmentedControl, SimpleGrid, Stack, Switch, Text, Title } from '@mantine/core';
+import { Anchor, Group, MultiSelect, Paper, SegmentedControl, SimpleGrid, Stack, Switch, Text, Title } from '@mantine/core';
 import { useInterval } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
-import { DataTable } from 'mantine-datatable';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ActionDrawer } from '../components/ActionDrawer';
 import { IdText, useDisplayNames } from '../components/bits';
 import { Lanes, type LaneGroupView } from '../components/Lanes';
-import { SessionStatusDot } from '../components/StatusBadge';
 import { api, useMeta } from '../lib/api';
-import { fmtMs, fromNow } from '../lib/format';
-import type { LaneItem, LiveResponse, SessionRow } from '../lib/types';
+import { fromNow } from '../lib/format';
+import type { LaneItem, LiveResponse } from '../lib/types';
 
 const WINDOWS = [
   { value: '15', label: '15 min' },
@@ -90,8 +88,6 @@ export function LivePage() {
       }));
   }, [data, roles, problemsOnly, dn]);
 
-  const signedIn = (data?.sessions ?? []).filter((s) => s.status === 'active' || s.status === 'idle');
-
   return (
     <Stack gap="md">
       <div className="page-head" style={{ marginBottom: 0 }}>
@@ -149,40 +145,6 @@ export function LivePage() {
           </Text>
         </Paper>
       )}
-
-      <div>
-        <Title order={2} mb="xs">
-          People signed in
-        </Title>
-        <div className="sheet">
-          <DataTable<SessionRow>
-            records={signedIn}
-            idAccessor="sessionId"
-            minHeight={signedIn.length ? undefined : 120}
-            noRecordsText="Nobody is signed in right now."
-            highlightOnHover
-            verticalSpacing="xs"
-            horizontalSpacing="md"
-            onRowClick={({ record }) => navigate(`/sessions/${encodeURIComponent(record.sessionId)}`)}
-            columns={[
-              { accessor: 'actorId', title: 'Person', render: (s) => (s.actorId ? data?.names[s.actorId] ?? s.actorId : '–') },
-              { accessor: 'actorRole', title: 'Role', render: (s) => s.actorRole ?? '–' },
-              { accessor: 'status', title: 'Status', render: (s) => <SessionStatusDot status={s.status} /> },
-              { accessor: 'startedAt', title: 'Signed in', render: (s) => fromNow(s.startedAt) },
-              { accessor: 'lastEventAt', title: 'Last action', render: (s) => fromNow(s.lastEventAt) },
-              { accessor: 'actionCount', title: 'Actions', textAlign: 'right', cellsClassName: 'num' },
-              {
-                accessor: 'caseIds',
-                title: 'Cases',
-                textAlign: 'right',
-                cellsClassName: 'num',
-                render: (s) => (s.failedActions ? <Badge color="red" size="sm">{s.caseIds.length} · {s.failedActions} failed</Badge> : s.caseIds.length),
-              },
-              { accessor: 'durationMs', title: 'Signed in for', textAlign: 'right', cellsClassName: 'num', render: (s) => fmtMs(s.durationMs) },
-            ]}
-          />
-        </div>
-      </div>
 
       <ActionDrawer actionId={selected?.item.actionId ?? null} sessionId={selected?.item.sessionId} caseId={selected?.caseId} onClose={() => setSelected(null)} />
     </Stack>

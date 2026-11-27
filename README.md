@@ -35,7 +35,7 @@ Demo mode fills a simulated CloudWatch log group with a week of realistic traffi
 
 ## The views
 
-1. **Live** (R23, the landing page): everything happening right now, grouped by case with one lane per person (auditor, TIC, CB, admin). Bars are actions, circles are sign-ins and diamonds are sign-outs. Running actions grow until they finish, and failures are red. Select any bar to see its full step tree without leaving the page. Below the timeline is everyone currently signed in.
+1. **Live** (R23, the landing page): everything happening right now, grouped by case with one lane per person (auditor, TIC, CB, admin). Bars are actions, circles are sign-ins and diamonds are sign-outs. Running actions grow until they finish, and failures are red. Select any bar to see its full step tree without leaving the page.
 2. **Actions** (R4, R5): newest first, filtered by type, status (including Incomplete), role, initiator and dates. Paste an action ID, a `traceparent` or a case ID into the top search.
 3. **Sessions** (R22): every sign-in, login to logout, marked Active, Idle, Signed out or Expired. Open one to see everything that person did in that visit, in order, with the gaps between actions and the cases they worked on.
 4. **Action detail** (R6, R7, R18): the indented step tree with a waterfall timeline. The slowest step is highlighted, and failed steps are red and opened. The header shows status, duration, initiator and role, AI cost and tokens. It links to the person's session and to the case journey.

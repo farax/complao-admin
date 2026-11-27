@@ -45,8 +45,7 @@ Acceptance criteria:
 4. Cases with a problem (a failed, partial or stalled action) are listed first.
 5. Selecting any bar shows that action's full step tree, including the failing step and its error, without leaving the page. From there you can open the person's session or the case journey.
 6. Updates pause while the pointer is over the timeline, so bars don't move while you're selecting one.
-7. A list of everyone currently signed in, with their role, status and activity, is shown under the timeline.
-8. New activity appears after the next log pull (within one pull interval).
+7. New activity appears after the next log pull (within one pull interval).
 
 ### R24 Multi-person journeys
 
