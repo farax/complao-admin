@@ -11,6 +11,8 @@ export interface Env {
   sessionSecret: string;
   sessionHours: number;
   userLookupUrl?: string;
+  /** Name of the lookup Lambda that reads names from RDS (takes precedence over the URL). */
+  userLookupFunction?: string;
   userLookupToken?: string;
   production: boolean;
   webDist?: string;
@@ -31,6 +33,7 @@ export function loadEnv(e: NodeJS.ProcessEnv = process.env): Env {
     sessionSecret: e.SESSION_SECRET ?? '',
     sessionHours: Number(e.SESSION_HOURS ?? 12),
     userLookupUrl: e.USER_LOOKUP_URL || undefined,
+    userLookupFunction: e.USER_LOOKUP_FUNCTION || undefined,
     userLookupToken: e.USER_LOOKUP_TOKEN || undefined,
     production,
     webDist: e.WEB_DIST || undefined,

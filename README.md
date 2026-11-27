@@ -66,7 +66,7 @@ sam deploy -t infra/template.yaml --guided \
 
 Leave `PortalImageUri` empty to deploy only the table and ingester (Phase 0/1 data before the UI).
 
-**User lookup (R15).** Point `USER_LOOKUP_URL` at a read-only Complao endpoint that takes `POST {"ids": [...]}` and returns `{"<id>": "<name>"}`. Names are cached in memory for 5 minutes and are never written to the store. If the lookup is down, the portal shows IDs instead of failing.
+**User lookup (R15).** Names live in RDS. Set `USER_LOOKUP_FUNCTION` to a small lookup Lambda inside the database's VPC that takes `{"ids": [...]}` and returns `{"<id>": "<name>"}` from a read-only view; the portal invokes it and never connects to RDS. (`USER_LOOKUP_URL` still works for an HTTP endpoint with the same shape.) Names are cached in memory for 5 minutes and are never written to the store. If the lookup is down, the portal shows IDs instead of failing.
 
 **Log retention (R17).** The action store has no TTL. Set the Complao log groups to *Never expire*.
 

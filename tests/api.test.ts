@@ -97,3 +97,26 @@ describe('R5, R15, R16 through the API', () => {
 });
 
 void T0;
+
+describe('R15: names from the RDS lookup Lambda', () => {
+  it('invokes the lookup with the IDs, caches, and falls back to IDs on failure', async () => {
+    const { lambdaResolver } = await import('../apps/api/src/names-lambda');
+    const calls: string[][] = [];
+    let fail = false;
+    const client = {
+      send: async (cmd: { input: { FunctionName?: string; Payload?: Uint8Array } }) => {
+        if (fail) return { FunctionError: 'Unhandled' };
+        const { ids } = JSON.parse(new TextDecoder().decode(cmd.input.Payload));
+        calls.push(ids);
+        expect(cmd.input.FunctionName).toBe('complao-user-names');
+        return { Payload: new TextEncoder().encode(JSON.stringify(Object.fromEntries(ids.map((i: string) => [i, `Name of ${i}`])))) };
+      },
+    };
+    const r = lambdaResolver('complao-user-names', client as never);
+    expect(await r.resolve(['u1', 'u2', 'u1'])).toEqual({ u1: 'Name of u1', u2: 'Name of u2' });
+    expect(await r.resolve(['u1'])).toEqual({ u1: 'Name of u1' });
+    expect(calls).toEqual([['u1', 'u2']]); // the second page was served from the cache
+    fail = true;
+    expect(await r.resolve(['u3'])).toEqual({ u3: 'u3' }); // lookup down: show the ID, don't fail the page
+  });
+});
