@@ -1,7 +1,7 @@
 import { AppShell, Badge, Burger, Group, NavLink, Stack, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure, useInterval } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
-import { IconActivityHeartbeat, IconBroadcast, IconListDetails, IconLogout, IconSearch, IconSettings, IconStack2 } from '@tabler/icons-react';
+import { IconActivityHeartbeat, IconBroadcast, IconListDetails, IconLogout, IconSearch, IconSettings } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { NavLink as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -12,7 +12,6 @@ const NAV = [
   { to: '/live', label: 'Live', icon: IconBroadcast, hint: 'Who is doing what, right now' },
   { to: '/actions', label: 'Actions', icon: IconListDetails, hint: 'Every action, newest first' },
   { to: '/health', label: 'Component health', icon: IconActivityHeartbeat, hint: 'How each part of the platform is behaving' },
-  { to: '/logs', label: 'Logs by area', icon: IconStack2, hint: 'Every step one component recorded' },
   { to: '/settings', label: 'Settings', icon: IconSettings, hint: 'Log pull, thresholds, names and prices' },
 ];
 
@@ -53,7 +52,7 @@ export function Layout() {
               label={n.label}
               description={n.hint}
               leftSection={<n.icon size={18} stroke={1.7} />}
-              active={location.pathname.startsWith(n.to) || (n.to === '/actions' && location.pathname.startsWith('/cases')) || (n.to === '/live' && location.pathname.startsWith('/sessions'))}
+              active={location.pathname.startsWith(n.to) || (n.to === '/actions' && location.pathname.startsWith('/cases')) || (n.to === '/live' && location.pathname.startsWith('/sessions')) || (n.to === '/health' && location.pathname.startsWith('/logs'))}
               styles={{ description: { fontSize: 11.5, lineHeight: 1.3 } }}
             />
           ))}

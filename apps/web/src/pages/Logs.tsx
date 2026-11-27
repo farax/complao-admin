@@ -1,10 +1,10 @@
-import { Alert, Button, Group, Select, Switch, Text, TextInput, Title } from '@mantine/core';
+import { Alert, Anchor, Button, Group, Select, Switch, Text, TextInput, Title } from '@mantine/core';
 import { useDebouncedValue } from '@mantine/hooks';
-import { IconSearch } from '@tabler/icons-react';
+import { IconArrowLeft, IconSearch } from '@tabler/icons-react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { DataTable } from 'mantine-datatable';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { rangeFromParams, RangePicker, rangeToParams, resolveRange, useDisplayNames } from '../components/bits';
 import { api, qs, useLiveInterval, useMeta } from '../lib/api';
 import { fmtMs, fmtTimeSec, shortId } from '../lib/format';
@@ -86,6 +86,9 @@ export function LogsPage() {
 
   return (
     <>
+      <Anchor component={Link} to="/health" size="sm" c="dimmed" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} mb={6}>
+        <IconArrowLeft size={14} /> Component health
+      </Anchor>
       <div className="page-head">
         <div>
           <Title order={1}>Logs by area</Title>
